@@ -1,0 +1,167 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ChannelType {
+  TEXT
+  VOICE
+  DM
+}
+
+enum ChannelRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum UserStatus {
+  ONLINE
+  OFFLINE
+  AWAY
+  BUSY
+}
+
+enum UserRole {
+  ADMIN
+  MOD
+  MEMBER
+}
+
+enum BotEventType {
+  REMINDER
+  NOTIFICATION
+  REPORT
+}
+
+model User {
+  id           String     @id @default(uuid())
+  username     String     @unique
+  displayName  String
+  passwordHash String
+  avatar       String?
+  status       UserStatus @default(OFFLINE)
+  role         UserRole   @default(MEMBER)
+  notifyDmOnly Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+
+  memberships       ChannelMember[]
+  messages          Message[]
+  ownedBots         Bot[]
+  pushSubscriptions PushSubscription[]
+
+  @@map("users")
+}
+
+model Channel {
+  id        String      @id @default(uuid())
+  name      String
+  type      ChannelType @default(TEXT)
+  isPrivate Boolean     @default(false)
+  createdAt DateTime    @default(now())
+
+  members      ChannelMember[]
+  messages     Message[]
+  dailyReports DailyReport[]
+
+  @@map("channels")
+}
+
+model ChannelMember {
+  channelId  String
+  userId     String
+  role       ChannelRole @default(MEMBER)
+  joinedAt   DateTime    @default(now())
+  lastReadAt DateTime    @default(now())
+  muted      Boolean     @default(false)
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([channelId, userId])
+  @@map("channel_members")
+}
+
+model Message {
+  id                 String    @id @default(uuid())
+  channelId          String
+  authorId           String?
+  botId              String?
+  content            String
+  createdAt          DateTime  @default(now())
+  editedAt           DateTime?
+  attachmentUrl      String?
+  attachmentName     String?
+  attachmentMimeType String?
+  attachmentSize     Int?
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author  User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  bot     Bot?    @relation(fields: [botId], references: [id], onDelete: SetNull)
+
+  @@map("messages")
+}
+
+model Bot {
+  id          String   @id @default(uuid())
+  name        String
+  tokenHash   String   @unique
+  // null = a built-in system bot (e.g. the Reminder Bot) with no human owner.
+  ownerId     String?
+  webhookUrl  String?
+  permissions String[]
+  createdAt   DateTime @default(now())
+
+  owner    User?      @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  messages Message[]
+  events   BotEvent[]
+
+  @@map("bots")
+}
+
+model BotEvent {
+  id           String       @id @default(uuid())
+  botId        String
+  type         BotEventType
+  payload      Json
+  scheduledFor DateTime?
+  sentAt       DateTime?
+  createdAt    DateTime     @default(now())
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@map("bot_events")
+}
+
+model DailyReport {
+  id          String   @id @default(uuid())
+  date        DateTime
+  channelId   String
+  content     String
+  generatedAt DateTime @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@map("daily_reports")
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("push_subscriptions")
+}

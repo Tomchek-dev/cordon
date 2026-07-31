@@ -1,0 +1,24 @@
+{
+	auto_https off
+}
+
+http://${LAN_HOSTNAME}, http://${LAN_IP}, http://localhost {
+	redir https://{host}{uri} permanent
+}
+
+https://${LAN_HOSTNAME}, https://${LAN_IP}, https://localhost {
+	tls /etc/caddy/certs/lan.pem /etc/caddy/certs/lan-key.pem
+
+	@backend path /auth /auth/* /channels /channels/* /users /users/* /socket.io /socket.io/* /uploads /uploads/* /bots /bots/* /api /api/* /reports /reports/* /search /search/* /push /push/*
+	handle @backend {
+		reverse_proxy backend:3001
+	}
+
+	handle_path /livekit/* {
+		reverse_proxy livekit:7880
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

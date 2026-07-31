@@ -1,0 +1,24 @@
+{
+	auto_https off
+}
+
+http://pop-os.local, http://pop-os, http://192.168.1.85, http://localhost {
+	redir https://{host}{uri} permanent
+}
+
+https://pop-os.local, https://pop-os, https://192.168.1.85, https://localhost {
+	tls /etc/caddy/certs/lan.pem /etc/caddy/certs/lan-key.pem
+
+	@backend path /auth /auth/* /channels /channels/* /users /users/* /socket.io /socket.io/* /uploads /uploads/* /bots /bots/* /api /api/* /reports /reports/* /search /search/* /push /push/*
+	handle @backend {
+		reverse_proxy host.docker.internal:3001
+	}
+
+	handle_path /livekit/* {
+		reverse_proxy livekit:7880
+	}
+
+	handle {
+		reverse_proxy host.docker.internal:3000
+	}
+}

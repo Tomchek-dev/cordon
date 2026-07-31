@@ -1,0 +1,12 @@
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 51000
+  # Static LAN IP so ICE candidates point clients directly at this machine
+  # instead of trying (and failing) to discover a public address.
+  node_ip: ${LAN_IP}
+  use_external_ip: false
+
+keys:
+  ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}

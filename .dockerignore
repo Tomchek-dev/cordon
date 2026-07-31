@@ -1,0 +1,12 @@
+**/node_modules
+**/.next
+**/dist
+**/generated
+**/coverage
+**/target
+apps/backend/uploads
+apps/desktop/src-tauri/target
+.git
+*.log
+**/.env
+**/.env.local

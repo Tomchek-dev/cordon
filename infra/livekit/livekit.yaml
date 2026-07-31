@@ -1,0 +1,12 @@
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 51000
+  # Static LAN IP so ICE candidates point clients directly at this machine
+  # instead of trying (and failing) to discover a public address.
+  node_ip: 192.168.1.85
+  use_external_ip: false
+
+keys:
+  chatlan: df796656f6d5738164d1a118e1988845b60ca5dd32c2f1ca10c227666452a2c1
