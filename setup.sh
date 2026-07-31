@@ -71,11 +71,11 @@ EOF
   echo "==> Wrote .env"
 fi
 
-echo "==> Generating infra/livekit/livekit.yaml..."
+echo "==> Generating infra/livekit/livekit.prod.yaml..."
 sed -e "s|\${LAN_IP}|${LAN_IP}|g" \
     -e "s|\${LIVEKIT_API_KEY}|${LIVEKIT_API_KEY}|g" \
     -e "s|\${LIVEKIT_API_SECRET}|${LIVEKIT_API_SECRET}|g" \
-    infra/livekit/livekit.yaml.template > infra/livekit/livekit.yaml
+    infra/livekit/livekit.yaml.template > infra/livekit/livekit.prod.yaml
 
 echo "==> Generating infra/caddy/Caddyfile.prod..."
 sed -e "s|\${LAN_IP}|${LAN_IP}|g" \

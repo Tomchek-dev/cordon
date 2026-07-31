@@ -22,7 +22,7 @@ services:
     restart: unless-stopped
     command: --config /etc/livekit.yaml
     volumes:
-      - ./infra/livekit/livekit.yaml:/etc/livekit.yaml:ro
+      - ./infra/livekit/livekit.prod.yaml:/etc/livekit.yaml:ro
     ports:
       - "7880:7880"
       - "7881:7881"
