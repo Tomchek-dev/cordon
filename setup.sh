@@ -90,6 +90,9 @@ mkdir -p infra/caddy/certs
 mkcert -install
 mkcert -cert-file infra/caddy/certs/lan.pem -key-file infra/caddy/certs/lan-key.pem \
   "${LAN_HOSTNAME}" "$(hostname)" "${LAN_IP}" localhost 127.0.0.1 ::1
+# Public CA cert only (never the private key) - Caddy serves this at
+# /rootCA.pem so other LAN devices can grab and trust it in one step.
+cp "$(mkcert -CAROOT)/rootCA.pem" infra/caddy/certs/rootCA.pem
 
 echo "==> Building images and starting dependencies (Postgres/Redis/LiveKit)..."
 docker compose -f docker-compose.prod.yml build backend frontend
@@ -118,6 +121,8 @@ Your internal chat tool is running at:
   https://${LAN_IP}
 
 Other machines on the LAN will see a certificate warning until they also
-trust this machine's mkcert root CA. Run 'mkcert -CAROOT' here to find it,
-and import rootCA.pem into each client's trust store (or browser).
+trust this machine's root CA. Download it from:
+  https://${LAN_HOSTNAME}/rootCA.pem
+(click through the one-time warning to fetch it) and import it into each
+client's system trust store or browser.
 EOF

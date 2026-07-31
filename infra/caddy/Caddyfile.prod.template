@@ -21,6 +21,13 @@ https://${LAN_HOSTNAME}, https://${LAN_IP}, https://localhost {
 		reverse_proxy backend:3001
 	}
 
+	# Lets a fresh device grab the LAN trust certificate before it has any
+	# reason to trust this site yet: https://<host>/rootCA.pem
+	handle /rootCA.pem {
+		root * /etc/caddy/certs
+		file_server
+	}
+
 	handle_path /livekit/* {
 		reverse_proxy livekit:7880
 	}

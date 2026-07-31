@@ -21,6 +21,13 @@ https://pop-os.local, https://pop-os, https://192.168.1.85, https://localhost {
 		reverse_proxy host.docker.internal:3001
 	}
 
+	# Lets a fresh device grab the LAN trust certificate before it has any
+	# reason to trust this site yet: https://<host>/rootCA.pem
+	handle /rootCA.pem {
+		root * /etc/caddy/certs
+		file_server
+	}
+
 	handle_path /livekit/* {
 		reverse_proxy livekit:7880
 	}
