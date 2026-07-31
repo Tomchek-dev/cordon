@@ -48,6 +48,7 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${VAPID_SUBJECT}
+      UPLOADS_ENCRYPTION_KEY: ${UPLOADS_ENCRYPTION_KEY}
     volumes:
       - backend_uploads:/app/uploads
 

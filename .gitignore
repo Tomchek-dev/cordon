@@ -15,3 +15,5 @@ apps/backend/uploads/
 infra/caddy/certs/
 infra/caddy/Caddyfile.prod
 infra/livekit/livekit.prod.yaml
+
+backups/

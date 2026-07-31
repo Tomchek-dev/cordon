@@ -101,10 +101,22 @@ export function fetchChannels() {
   return request<Channel[]>('/channels');
 }
 
-export function createChannel(name: string, type: 'TEXT' | 'VOICE' = 'TEXT') {
+export function createChannel(
+  name: string,
+  type: 'TEXT' | 'VOICE' = 'TEXT',
+  isPrivate = false,
+  memberIds: string[] = [],
+) {
   return request<Channel>('/channels', {
     method: 'POST',
-    body: JSON.stringify({ name, type }),
+    body: JSON.stringify({ name, type, isPrivate, memberIds }),
+  });
+}
+
+export function addChannelMember(channelId: string, userId: string) {
+  return request<{ ok: true }>(`/channels/${channelId}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ userId }),
   });
 }
 
@@ -228,6 +240,21 @@ export function searchMessages(query: string, channelId?: string) {
 
 export function fetchPushPublicKey() {
   return request<{ publicKey: string }>('/push/public-key');
+}
+
+export interface AuditLogEntry {
+  id: string;
+  actorId: string | null;
+  actor: { id: string; username: string; displayName: string } | null;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export function fetchAuditLog() {
+  return request<AuditLogEntry[]>('/audit-log');
 }
 
 export function subscribePush(sub: PushSubscriptionJSON) {

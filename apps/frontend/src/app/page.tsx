@@ -23,8 +23,10 @@ import { decodeToken } from '@/lib/jwt';
 import { disconnectSocket, getSocket } from '@/lib/socket';
 import { sendDesktopNotification, setDesktopUnreadCount } from '@/lib/tauri';
 import { Avatar } from '@/components/Avatar';
+import { AuditLogPanel } from '@/components/AuditLogPanel';
 import { BotsPanel } from '@/components/BotsPanel';
 import { ReportsPanel } from '@/components/ReportsPanel';
+import { MessageContent } from '@/components/MessageContent';
 import { PushNotificationToggle } from '@/components/PushNotificationToggle';
 import { SearchPanel } from '@/components/SearchPanel';
 import { VoiceCallBar } from '@/components/VoiceCallBar';
@@ -54,6 +56,8 @@ export default function Home() {
   const [draft, setDraft] = useState('');
   const [newChannelName, setNewChannelName] = useState('');
   const [newChannelType, setNewChannelType] = useState<'TEXT' | 'VOICE'>('TEXT');
+  const [newChannelPrivate, setNewChannelPrivate] = useState(false);
+  const [newChannelMemberIds, setNewChannelMemberIds] = useState<string[]>([]);
   const [dmCallOpen, setDmCallOpen] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -63,6 +67,7 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [botsPanelOpen, setBotsPanelOpen] = useState(false);
   const [reportsPanelOpen, setReportsPanelOpen] = useState(false);
+  const [auditLogPanelOpen, setAuditLogPanelOpen] = useState(false);
   const [searchPanelOpen, setSearchPanelOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [notifyDmOnly, setNotifyDmOnlyState] = useState(false);
@@ -262,13 +267,26 @@ export default function Home() {
   async function handleCreateChannel(e: React.FormEvent) {
     e.preventDefault();
     if (!newChannelName.trim()) return;
-    const channel = await createChannel(newChannelName.trim(), newChannelType);
+    const channel = await createChannel(
+      newChannelName.trim(),
+      newChannelType,
+      newChannelPrivate,
+      newChannelPrivate ? newChannelMemberIds : [],
+    );
     // Same as openDm: refetch for the enriched shape (unreadCount, dmParticipant) rather
     // than trusting the raw create response.
     const refreshed = await fetchChannels();
     setChannels(refreshed);
     setNewChannelName('');
+    setNewChannelPrivate(false);
+    setNewChannelMemberIds([]);
     setActiveChannelId(channel.id);
+  }
+
+  function toggleNewChannelMember(userId: string) {
+    setNewChannelMemberIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
+    );
   }
 
   async function openDm(userId: string) {
@@ -492,7 +510,9 @@ export default function Home() {
                   onClick={() => selectChannel(channel.id)}
                   className="flex flex-1 items-center justify-between px-2 py-1.5 text-left"
                 >
-                  <span className={channel.muted ? 'opacity-50' : ''}># {channel.name}</span>
+                  <span className={channel.muted ? 'opacity-50' : ''}>
+                    {channel.isPrivate ? '🔒' : '#'} {channel.name}
+                  </span>
                   {channel.unreadCount > 0 && (
                     <span className="rounded-full bg-indigo-600 px-1.5 text-[10px] font-semibold text-white">
                       {channel.unreadCount}
@@ -534,6 +554,31 @@ export default function Home() {
                     Voice
                   </label>
                 </div>
+                <label className="flex items-center gap-1 text-[11px] text-neutral-500">
+                  <input
+                    type="checkbox"
+                    checked={newChannelPrivate}
+                    onChange={(e) => setNewChannelPrivate(e.target.checked)}
+                  />
+                  🔒 Private
+                </label>
+                {newChannelPrivate && (
+                  <div className="max-h-24 space-y-0.5 overflow-y-auto rounded border border-neutral-800 p-1">
+                    {otherUsers.map((user) => (
+                      <label
+                        key={user.id}
+                        className="flex items-center gap-1 px-1 text-[11px] text-neutral-400"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={newChannelMemberIds.includes(user.id)}
+                          onChange={() => toggleNewChannelMember(user.id)}
+                        />
+                        {user.displayName}
+                      </label>
+                    ))}
+                  </div>
+                )}
               </form>
             )}
           </div>
@@ -553,7 +598,10 @@ export default function Home() {
                       : 'text-neutral-400 hover:bg-neutral-800/50'
                   }`}
                 >
-                  <span>🔊 {channel.name}</span>
+                  <span>
+                    🔊 {channel.isPrivate && '🔒 '}
+                    {channel.name}
+                  </span>
                 </button>
               ))}
             </div>
@@ -642,6 +690,14 @@ export default function Home() {
         >
           Bots
         </button>
+        {currentUser?.role === 'ADMIN' && (
+          <button
+            onClick={() => setAuditLogPanelOpen(true)}
+            className="border-t border-neutral-800 p-2 text-left text-xs text-neutral-500 hover:text-neutral-300"
+          >
+            Audit Log
+          </button>
+        )}
         <div className="border-t border-neutral-800">
           <PushNotificationToggle />
         </div>
@@ -655,6 +711,7 @@ export default function Home() {
 
       {botsPanelOpen && <BotsPanel onClose={() => setBotsPanelOpen(false)} />}
       {reportsPanelOpen && <ReportsPanel onClose={() => setReportsPanelOpen(false)} />}
+      {auditLogPanelOpen && <AuditLogPanel onClose={() => setAuditLogPanelOpen(false)} />}
       {searchPanelOpen && (
         <SearchPanel
           channels={channels}
@@ -778,7 +835,9 @@ export default function Home() {
                 ) : (
                   <>
                     {message.content && (
-                      <p className="ml-8 text-neutral-300">{message.content}</p>
+                      <p className="ml-8 text-neutral-300">
+                        <MessageContent content={message.content} />
+                      </p>
                     )}
                     {message.attachmentUrl &&
                       (message.attachmentMimeType?.startsWith('image/') ? (

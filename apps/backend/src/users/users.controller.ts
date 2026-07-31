@@ -11,11 +11,14 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
-import { avatarUpload } from '../uploads/uploads.util';
+import { AVATARS_DIR, avatarFilename, avatarUpload, ensureDir } from '../uploads/uploads.util';
+import { encryptFile } from '../uploads/encryption.util';
 import { UsersService } from './users.service';
 
 @UseGuards(JwtAuthGuard)
@@ -35,8 +38,11 @@ export class UsersController {
 
   @Post('me/avatar')
   @UseInterceptors(FileInterceptor('avatar', avatarUpload))
-  uploadAvatar(@UploadedFile() file: Express.Multer.File, @Req() req: Request) {
-    return this.usersService.setAvatar(req.user!.userId, `/uploads/avatars/${file.filename}`);
+  async uploadAvatar(@UploadedFile() file: Express.Multer.File, @Req() req: Request) {
+    ensureDir(AVATARS_DIR);
+    const filename = avatarFilename(req.user!.userId, file.originalname);
+    await writeFile(join(AVATARS_DIR, filename), encryptFile(file.buffer, file.mimetype));
+    return this.usersService.setAvatar(req.user!.userId, `/uploads/avatars/${filename}`);
   }
 
   @Patch('me/preferences')
@@ -47,7 +53,7 @@ export class UsersController {
   @Patch(':id/role')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  setRole(@Param('id') id: string, @Body('role') role: 'ADMIN' | 'MOD' | 'MEMBER') {
-    return this.usersService.setRole(id, role);
+  setRole(@Param('id') id: string, @Body('role') role: 'ADMIN' | 'MOD' | 'MEMBER', @Req() req: Request) {
+    return this.usersService.setRole(req.user!.userId, id, role);
   }
 }

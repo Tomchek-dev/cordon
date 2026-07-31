@@ -56,6 +56,7 @@ else
   VAPID_PUBLIC_KEY="$(echo "$VAPID_OUTPUT" | grep -A1 "Public Key" | tail -1 | tr -d '[:space:]')"
   VAPID_PRIVATE_KEY="$(echo "$VAPID_OUTPUT" | grep -A1 "Private Key" | tail -1 | tr -d '[:space:]')"
   VAPID_SUBJECT="mailto:admin@${LAN_HOSTNAME}"
+  UPLOADS_ENCRYPTION_KEY="$(rand_hex)"
 
   cat > .env <<EOF
 LAN_IP=${LAN_IP}
@@ -67,8 +68,10 @@ POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
 VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
 VAPID_SUBJECT=${VAPID_SUBJECT}
+UPLOADS_ENCRYPTION_KEY=${UPLOADS_ENCRYPTION_KEY}
 EOF
-  echo "==> Wrote .env"
+  chmod 600 .env
+  echo "==> Wrote .env (permissions set to 600)"
 fi
 
 echo "==> Generating infra/livekit/livekit.prod.yaml..."

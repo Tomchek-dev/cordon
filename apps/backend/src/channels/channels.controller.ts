@@ -12,11 +12,14 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
-import { attachmentUpload } from '../uploads/uploads.util';
+import { ATTACHMENTS_DIR, attachmentFilename, attachmentUpload, ensureDir } from '../uploads/uploads.util';
+import { encryptFile } from '../uploads/encryption.util';
 import { ChannelsService } from './channels.service';
 import { VoiceService } from '../voice/voice.service';
 
@@ -36,11 +39,22 @@ export class ChannelsController {
   @Post()
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'MOD')
-  create(@Body('name') name: string, @Body('type') type: string | undefined, @Req() req: Request) {
+  create(
+    @Body('name') name: string,
+    @Body('type') type: string | undefined,
+    @Body('isPrivate') isPrivate: boolean | undefined,
+    @Body('memberIds') memberIds: string[] | undefined,
+    @Req() req: Request,
+  ) {
     if (type !== undefined && type !== 'TEXT' && type !== 'VOICE') {
       throw new BadRequestException('type must be TEXT or VOICE');
     }
-    return this.channelsService.create(name, req.user!.userId, type);
+    return this.channelsService.create(name, req.user!.userId, type, isPrivate ?? false, memberIds ?? []);
+  }
+
+  @Post(':id/members')
+  addMember(@Param('id') id: string, @Body('userId') targetUserId: string, @Req() req: Request) {
+    return this.channelsService.addMember(id, req.user!.userId, targetUserId);
   }
 
   @Post(':id/voice-token')
@@ -72,8 +86,11 @@ export class ChannelsController {
     @Req() req: Request,
   ) {
     await this.channelsService.ensureMembership(channelId, req.user!.userId);
+    ensureDir(ATTACHMENTS_DIR);
+    const filename = attachmentFilename(file.originalname);
+    await writeFile(join(ATTACHMENTS_DIR, filename), encryptFile(file.buffer, file.mimetype));
     return {
-      url: `/uploads/attachments/${file.filename}`,
+      url: `/uploads/attachments/${filename}`,
       filename: file.originalname,
       mimeType: file.mimetype,
       size: file.size,

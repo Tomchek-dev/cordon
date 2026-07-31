@@ -9,6 +9,13 @@ http://${LAN_HOSTNAME}, http://${LAN_IP}, http://localhost {
 https://${LAN_HOSTNAME}, https://${LAN_IP}, https://localhost {
 	tls /etc/caddy/certs/lan.pem /etc/caddy/certs/lan-key.pem
 
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
 	@backend path /auth /auth/* /channels /channels/* /users /users/* /socket.io /socket.io/* /uploads /uploads/* /bots /bots/* /api /api/* /reports /reports/* /search /search/* /push /push/*
 	handle @backend {
 		reverse_proxy backend:3001

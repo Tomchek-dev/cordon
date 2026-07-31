@@ -18,6 +18,7 @@ import { PresenceService, PRESENCE_CHANNEL } from '../presence/presence.service'
 import type { PresenceStatus } from '../presence/presence.service';
 import { RedisService } from '../redis/redis.service';
 import { SlashCommandsService } from './slash-commands.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import {
   MESSAGE_AUTHOR_INCLUDE,
   MESSAGE_CREATED_EVENT,
@@ -55,6 +56,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     private readonly redis: RedisService,
     private readonly slashCommands: SlashCommandsService,
     private readonly events: EventEmitter2,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   onModuleInit() {
@@ -239,6 +241,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
     await this.prisma.message.delete({ where: { id: data.messageId } });
     this.server.to(existing.channelId).emit('messageDeleted', { id: data.messageId, channelId: existing.channelId });
+    await this.auditLog.log(client.data.userId, 'message.deleted', 'Message', data.messageId, {
+      channelId: existing.channelId,
+    });
   }
 
   @SubscribeMessage('markRead')

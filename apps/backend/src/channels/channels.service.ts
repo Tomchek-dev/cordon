@@ -3,6 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MESSAGE_AUTHOR_INCLUDE } from '../chat/events';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 export const CHANNEL_CREATED_EVENT = 'channel.created';
 
@@ -18,6 +19,7 @@ export class ChannelsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   async findAllForUser(userId: string) {
@@ -72,20 +74,65 @@ export class ChannelsService {
     );
   }
 
-  async create(name: string, ownerId: string, type: 'TEXT' | 'VOICE' = 'TEXT') {
+  async create(
+    name: string,
+    ownerId: string,
+    type: 'TEXT' | 'VOICE' = 'TEXT',
+    isPrivate = false,
+    memberIds: string[] = [],
+  ) {
+    const initialMemberIds = [...new Set([ownerId, ...memberIds])];
     const channel = await this.prisma.channel.create({
       data: {
         name,
         type,
-        isPrivate: false,
-        members: { create: [{ userId: ownerId, role: 'OWNER' }] },
+        isPrivate,
+        members: {
+          create: initialMemberIds.map((userId) => ({
+            userId,
+            role: userId === ownerId ? 'OWNER' : 'MEMBER',
+          })),
+        },
       },
     });
     this.events.emit(CHANNEL_CREATED_EVENT, {
       channelId: channel.id,
-      memberIds: 'all',
+      memberIds: isPrivate ? initialMemberIds : 'all',
     } satisfies ChannelCreatedEvent);
+    await this.auditLog.log(ownerId, 'channel.created', 'Channel', channel.id, {
+      name,
+      type,
+      isPrivate,
+    });
     return channel;
+  }
+
+  async addMember(channelId: string, requesterId: string, targetUserId: string) {
+    const channel = await this.prisma.channel.findUnique({ where: { id: channelId } });
+    if (!channel) {
+      throw new NotFoundException('channel not found');
+    }
+    if (!channel.isPrivate) {
+      throw new ForbiddenException('public channels are open to everyone already');
+    }
+
+    const requesterMembership = await this.prisma.channelMember.findUnique({
+      where: { channelId_userId: { channelId, userId: requesterId } },
+    });
+    if (!requesterMembership || requesterMembership.role === 'MEMBER') {
+      throw new ForbiddenException('only the channel owner or an admin can add members');
+    }
+
+    await this.prisma.channelMember.upsert({
+      where: { channelId_userId: { channelId, userId: targetUserId } },
+      create: { channelId, userId: targetUserId },
+      update: {},
+    });
+    this.events.emit(CHANNEL_CREATED_EVENT, {
+      channelId,
+      memberIds: [targetUserId],
+    } satisfies ChannelCreatedEvent);
+    return { ok: true };
   }
 
   async createDm(userId: string, targetUserId: string) {

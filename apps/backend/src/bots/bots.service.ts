@@ -6,6 +6,7 @@ import { ChannelsService } from '../channels/channels.service';
 import { MESSAGE_AUTHOR_INCLUDE, MESSAGE_CREATED_EVENT, type MessageCreatedEvent } from '../chat/events';
 import { CreateBotDto } from './dto/create-bot.dto';
 import { UpdateBotDto } from './dto/update-bot.dto';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 const BOT_SELECT = {
   id: true,
@@ -26,6 +27,7 @@ export class BotsService {
     private readonly prisma: PrismaService,
     private readonly channelsService: ChannelsService,
     private readonly events: EventEmitter2,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   async create(ownerId: string, dto: CreateBotDto) {
@@ -40,6 +42,7 @@ export class BotsService {
       },
       select: BOT_SELECT,
     });
+    await this.auditLog.log(ownerId, 'bot.created', 'Bot', bot.id, { name: bot.name });
     // The raw token is only ever available at creation time - the server only
     // ever stores/compares its hash, same as a password.
     return { ...bot, token };
@@ -65,6 +68,7 @@ export class BotsService {
     if (!bot) throw new NotFoundException('bot not found');
     if (bot.ownerId !== ownerId) throw new ForbiddenException('not your bot');
     await this.prisma.bot.delete({ where: { id: botId } });
+    await this.auditLog.log(ownerId, 'bot.deleted', 'Bot', botId, { name: bot.name });
     return { ok: true };
   }
 
