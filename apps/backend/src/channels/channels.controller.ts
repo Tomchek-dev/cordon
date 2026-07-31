@@ -73,6 +73,16 @@ export class ChannelsController {
     return this.channelsService.findMessages(id, req.user!.userId);
   }
 
+  @Get(':id/pinned')
+  findPinnedMessages(@Param('id') id: string, @Req() req: Request) {
+    return this.channelsService.findPinnedMessages(id, req.user!.userId);
+  }
+
+  @Get(':id/read-receipts')
+  getReadReceipts(@Param('id') id: string, @Req() req: Request) {
+    return this.channelsService.getReadReceipts(id, req.user!.userId);
+  }
+
   @Patch(':id/mute')
   setMuted(@Param('id') id: string, @Body('muted') muted: boolean, @Req() req: Request) {
     return this.channelsService.setMuted(id, req.user!.userId, muted);

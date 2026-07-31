@@ -157,6 +157,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       channelId: string;
       content: string;
       attachment?: { url: string; filename: string; mimeType: string; size: number };
+      replyToId?: string;
     },
     @ConnectedSocket() client: AuthedSocket,
   ) {
@@ -190,6 +191,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         attachmentName: data.attachment?.filename,
         attachmentMimeType: data.attachment?.mimeType,
         attachmentSize: data.attachment?.size,
+        replyToId: data.replyToId,
       },
       include: MESSAGE_AUTHOR_INCLUDE,
     });
@@ -249,6 +251,70 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('markRead')
   async handleMarkRead(@MessageBody() channelId: string, @ConnectedSocket() client: AuthedSocket) {
     await this.channelsService.markRead(channelId, client.data.userId);
+    client.to(channelId).emit('read', { channelId, userId: client.data.userId, lastReadAt: new Date() });
+  }
+
+  // Purely ephemeral - no DB write, just relayed to everyone else already in
+  // the room. The frontend debounces sends and times out stale indicators.
+  @SubscribeMessage('typing')
+  handleTyping(@MessageBody() channelId: string, @ConnectedSocket() client: AuthedSocket) {
+    client.to(channelId).emit('userTyping', { channelId, userId: client.data.userId });
+  }
+
+  @SubscribeMessage('addReaction')
+  async handleAddReaction(
+    @MessageBody() data: { messageId: string; emoji: string },
+    @ConnectedSocket() client: AuthedSocket,
+  ) {
+    const message = await this.prisma.message.findUnique({ where: { id: data.messageId } });
+    if (!message) return;
+    await this.channelsService.ensureMembership(message.channelId, client.data.userId);
+    await this.prisma.messageReaction.upsert({
+      where: {
+        messageId_userId_emoji: { messageId: data.messageId, userId: client.data.userId, emoji: data.emoji },
+      },
+      create: { messageId: data.messageId, userId: client.data.userId, emoji: data.emoji },
+      update: {},
+    });
+    this.server
+      .to(message.channelId)
+      .emit('reactionAdded', { messageId: data.messageId, userId: client.data.userId, emoji: data.emoji });
+  }
+
+  @SubscribeMessage('removeReaction')
+  async handleRemoveReaction(
+    @MessageBody() data: { messageId: string; emoji: string },
+    @ConnectedSocket() client: AuthedSocket,
+  ) {
+    const message = await this.prisma.message.findUnique({ where: { id: data.messageId } });
+    if (!message) return;
+    await this.prisma.messageReaction.deleteMany({
+      where: { messageId: data.messageId, userId: client.data.userId, emoji: data.emoji },
+    });
+    this.server
+      .to(message.channelId)
+      .emit('reactionRemoved', { messageId: data.messageId, userId: client.data.userId, emoji: data.emoji });
+  }
+
+  @SubscribeMessage('togglePin')
+  async handleTogglePin(@MessageBody() data: { messageId: string }, @ConnectedSocket() client: AuthedSocket) {
+    const message = await this.prisma.message.findUnique({ where: { id: data.messageId } });
+    if (!message) return;
+    await this.channelsService.ensureMembership(message.channelId, client.data.userId);
+    const updated = await this.prisma.message.update({
+      where: { id: data.messageId },
+      data: { pinnedAt: message.pinnedAt ? null : new Date() },
+    });
+    this.server
+      .to(message.channelId)
+      .emit('messagePinned', { messageId: data.messageId, pinnedAt: updated.pinnedAt });
+    await this.auditLog.log(
+      client.data.userId,
+      updated.pinnedAt ? 'message.pinned' : 'message.unpinned',
+      'Message',
+      data.messageId,
+      { channelId: message.channelId },
+    );
   }
 
   // Pushed by NotificationsService (regular messages, respecting mute/DM-only) and

@@ -58,6 +58,7 @@ model User {
   ownedBots         Bot[]
   pushSubscriptions PushSubscription[]
   auditLogs         AuditLog[]
+  reactions         MessageReaction[]
 
   @@map("users")
 }
@@ -103,12 +104,31 @@ model Message {
   attachmentName     String?
   attachmentMimeType String?
   attachmentSize     Int?
+  pinnedAt           DateTime?
+  replyToId          String?
 
-  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  author  User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
-  bot     Bot?    @relation(fields: [botId], references: [id], onDelete: SetNull)
+  channel   Channel           @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author    User?             @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  bot       Bot?              @relation(fields: [botId], references: [id], onDelete: SetNull)
+  replyTo   Message?          @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   Message[]         @relation("MessageReplies")
+  reactions MessageReaction[]
 
   @@map("messages")
+}
+
+model MessageReaction {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@map("message_reactions")
 }
 
 model Bot {

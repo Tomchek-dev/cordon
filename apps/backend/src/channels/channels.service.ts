@@ -212,4 +212,25 @@ export class ChannelsService {
       include: MESSAGE_AUTHOR_INCLUDE,
     });
   }
+
+  async getReadReceipts(channelId: string, userId: string) {
+    await this.ensureMembership(channelId, userId);
+    const members = await this.prisma.channelMember.findMany({
+      where: { channelId, userId: { not: userId } },
+      select: {
+        lastReadAt: true,
+        user: { select: { id: true, displayName: true } },
+      },
+    });
+    return members.map((m) => ({ userId: m.user.id, displayName: m.user.displayName, lastReadAt: m.lastReadAt }));
+  }
+
+  async findPinnedMessages(channelId: string, userId: string) {
+    await this.ensureMembership(channelId, userId);
+    return this.prisma.message.findMany({
+      where: { channelId, pinnedAt: { not: null } },
+      orderBy: { pinnedAt: 'desc' },
+      include: MESSAGE_AUTHOR_INCLUDE,
+    });
+  }
 }

@@ -11,13 +11,23 @@ export interface MessageCreatedEvent {
   attachmentName?: string | null;
   attachmentMimeType?: string | null;
   attachmentSize?: number | null;
+  replyToId?: string | null;
 }
 
 // Shared include shape so every place a message gets created/fetched returns
-// the same author/bot fields the frontend expects.
+// the same author/bot/reaction/reply fields the frontend expects.
 export const MESSAGE_AUTHOR_INCLUDE = {
   author: { select: { id: true, username: true, displayName: true, avatar: true } },
   bot: { select: { id: true, name: true } },
+  reactions: { select: { emoji: true, userId: true } },
+  replyTo: {
+    select: {
+      id: true,
+      content: true,
+      author: { select: { id: true, displayName: true } },
+      bot: { select: { id: true, name: true } },
+    },
+  },
 } as const;
 
 export const NOTIFICATION_EVENT = 'notification.push';

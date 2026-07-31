@@ -6,6 +6,7 @@ import type { Socket } from 'socket.io-client';
 import {
   type Channel,
   type ChatMessage,
+  type ReadReceipt,
   type PresenceStatus,
   type User,
   createChannel,
@@ -13,6 +14,8 @@ import {
   fetchChannels,
   fetchMe,
   fetchMessages,
+  fetchPinnedMessages,
+  fetchReadReceipts,
   fetchUsers,
   setChannelMuted,
   setNotifyDmOnly,
@@ -54,6 +57,9 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [draft, setDraft] = useState('');
+  const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
+  const typingTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const lastTypingEmitRef = useRef(0);
   const [newChannelName, setNewChannelName] = useState('');
   const [newChannelType, setNewChannelType] = useState<'TEXT' | 'VOICE'>('TEXT');
   const [newChannelPrivate, setNewChannelPrivate] = useState(false);
@@ -62,6 +68,11 @@ export default function Home() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [pinnedMessages, setPinnedMessages] = useState<ChatMessage[]>([]);
+  const [pinnedPanelOpen, setPinnedPanelOpen] = useState(false);
+  const [readReceipts, setReadReceipts] = useState<ReadReceipt[]>([]);
+  const [emojiPickerFor, setEmojiPickerFor] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -146,6 +157,56 @@ export default function Home() {
       fetchChannels().then(setChannels);
     });
 
+    socket.on('userTyping', ({ channelId, userId }: { channelId: string; userId: string }) => {
+      if (channelId !== activeChannelIdRef.current) return;
+      setTypingUserIds((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
+      const existing = typingTimeoutsRef.current.get(userId);
+      if (existing) clearTimeout(existing);
+      typingTimeoutsRef.current.set(
+        userId,
+        setTimeout(() => {
+          setTypingUserIds((prev) => prev.filter((id) => id !== userId));
+          typingTimeoutsRef.current.delete(userId);
+        }, 3000),
+      );
+    });
+
+    socket.on('reactionAdded', ({ messageId, userId, emoji }: { messageId: string; userId: string; emoji: string }) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId && !m.reactions.some((r) => r.userId === userId && r.emoji === emoji)
+            ? { ...m, reactions: [...m.reactions, { userId, emoji }] }
+            : m,
+        ),
+      );
+    });
+
+    socket.on('reactionRemoved', ({ messageId, userId, emoji }: { messageId: string; userId: string; emoji: string }) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? { ...m, reactions: m.reactions.filter((r) => !(r.userId === userId && r.emoji === emoji)) }
+            : m,
+        ),
+      );
+    });
+
+    socket.on('messagePinned', ({ messageId, pinnedAt }: { messageId: string; pinnedAt: string | null }) => {
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, pinnedAt } : m)));
+      if (activeChannelIdRef.current) {
+        fetchPinnedMessages(activeChannelIdRef.current).then(setPinnedMessages);
+      }
+    });
+
+    socket.on('read', ({ channelId, userId, lastReadAt }: { channelId: string; userId: string; lastReadAt: string }) => {
+      if (channelId !== activeChannelIdRef.current) return;
+      setReadReceipts((prev) => {
+        const existing = prev.find((r) => r.userId === userId);
+        if (!existing) return prev;
+        return prev.map((r) => (r.userId === userId ? { ...r, lastReadAt } : r));
+      });
+    });
+
     socket.on(
       'notification',
       (payload: { channelId: string; preview: string; kind: 'message' | 'mention' | 'reminder' }) => {
@@ -211,6 +272,7 @@ export default function Home() {
 
   useEffect(() => {
     activeChannelIdRef.current = activeChannelId;
+    setTypingUserIds([]);
   }, [activeChannelId]);
 
   useEffect(() => {
@@ -226,6 +288,10 @@ export default function Home() {
     fetchMessages(activeChannelId)
       .then(setMessages)
       .finally(() => setMessagesLoading(false));
+    fetchPinnedMessages(activeChannelId).then(setPinnedMessages);
+    fetchReadReceipts(activeChannelId).then(setReadReceipts);
+    setReplyingTo(null);
+    setPinnedPanelOpen(false);
 
     setChannels((prev) =>
       prev.map((c) => (c.id === activeChannelId ? { ...c, unreadCount: 0 } : c)),
@@ -241,15 +307,35 @@ export default function Home() {
     (e: React.FormEvent) => {
       e.preventDefault();
       if (!draft.trim() || !activeChannelId) return;
-      socketRef.current?.emit('sendMessage', { channelId: activeChannelId, content: draft });
+      socketRef.current?.emit('sendMessage', {
+        channelId: activeChannelId,
+        content: draft,
+        replyToId: replyingTo?.id,
+      });
       setDraft('');
+      setReplyingTo(null);
     },
-    [draft, activeChannelId],
+    [draft, activeChannelId, replyingTo],
   );
 
   function startEdit(message: ChatMessage) {
     setEditingId(message.id);
     setEditDraft(message.content);
+  }
+
+  const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🎉'];
+
+  function toggleReaction(message: ChatMessage, emoji: string) {
+    const alreadyReacted = message.reactions.some((r) => r.userId === currentUserId && r.emoji === emoji);
+    socketRef.current?.emit(alreadyReacted ? 'removeReaction' : 'addReaction', {
+      messageId: message.id,
+      emoji,
+    });
+    setEmojiPickerFor(null);
+  }
+
+  function togglePin(messageId: string) {
+    socketRef.current?.emit('togglePin', { messageId });
   }
 
   function submitEdit(e: React.FormEvent) {
@@ -262,6 +348,16 @@ export default function Home() {
   function deleteMessage(messageId: string) {
     if (!window.confirm('Delete this message?')) return;
     socketRef.current?.emit('deleteMessage', { messageId });
+  }
+
+  function handleDraftChange(value: string) {
+    setDraft(value);
+    if (!activeChannelId) return;
+    const now = Date.now();
+    if (now - lastTypingEmitRef.current > 2000) {
+      lastTypingEmitRef.current = now;
+      socketRef.current?.emit('typing', activeChannelId);
+    }
   }
 
   async function handleCreateChannel(e: React.FormEvent) {
@@ -738,10 +834,20 @@ export default function Home() {
                   : `# ${activeChannelLabel}`
               : 'Select a channel'}
           </h2>
+          {activeChannel && (
+            <button
+              onClick={() => setPinnedPanelOpen((open) => !open)}
+              className={`text-xs font-medium ${
+                activeChannel.type !== 'DM' ? 'ml-auto' : ''
+              } ${pinnedPanelOpen ? 'text-indigo-400' : 'text-neutral-400 hover:text-neutral-200'}`}
+            >
+              📌 Pinned{pinnedMessages.length > 0 ? ` (${pinnedMessages.length})` : ''}
+            </button>
+          )}
           {activeChannel?.type === 'DM' && (
             <button
               onClick={() => setDmCallOpen((open) => !open)}
-              className={`ml-auto rounded px-2 py-1 text-xs font-medium ${
+              className={`ml-2 rounded px-2 py-1 text-xs font-medium ${
                 dmCallOpen ? 'bg-emerald-700 text-white' : 'text-neutral-400 hover:bg-neutral-800'
               }`}
             >
@@ -749,6 +855,23 @@ export default function Home() {
             </button>
           )}
         </header>
+
+        {pinnedPanelOpen && (
+          <div className="max-h-40 overflow-y-auto border-b border-neutral-800 bg-neutral-900/60 px-4 py-2">
+            {pinnedMessages.length === 0 ? (
+              <p className="text-xs text-neutral-600">No pinned messages in this channel.</p>
+            ) : (
+              pinnedMessages.map((m) => (
+                <div key={m.id} className="py-1 text-xs text-neutral-400">
+                  <span className="font-medium text-neutral-300">
+                    {m.author?.displayName ?? m.bot?.name ?? 'System'}:
+                  </span>{' '}
+                  {m.content}
+                </div>
+              ))
+            )}
+          </div>
+        )}
 
         {activeChannel?.type === 'VOICE' && (
           <VoiceCallBar key={activeChannel.id} channelId={activeChannel.id} label={activeChannel.name} />
@@ -772,9 +895,17 @@ export default function Home() {
           {!messagesLoading && activeChannel && messages.length === 0 && (
             <p className="text-xs text-neutral-600">No messages yet. Say hello.</p>
           )}
-          {messages.map((message) => {
+          {messages.map((message, index) => {
             const isOwn = message.authorId === currentUserId;
             const isEditing = editingId === message.id;
+            const isLastMessage = index === messages.length - 1;
+            const reactionGroups = message.reactions.reduce<Record<string, string[]>>((acc, r) => {
+              (acc[r.emoji] ??= []).push(r.userId);
+              return acc;
+            }, {});
+            const seenBy = isLastMessage
+              ? readReceipts.filter((r) => new Date(r.lastReadAt) >= new Date(message.createdAt))
+              : [];
             return (
               <div key={message.id} className="group text-sm">
                 <div className="flex items-center gap-2">
@@ -796,20 +927,43 @@ export default function Home() {
                     {new Date(message.createdAt).toLocaleTimeString()}
                   </span>
                   {message.editedAt && <span className="text-xs text-neutral-600">(edited)</span>}
-                  {isOwn && !isEditing && (
+                  {message.pinnedAt && <span className="text-xs text-indigo-400">📌 pinned</span>}
+                  {!isEditing && (
                     <span className="ml-2 hidden gap-2 text-xs text-neutral-500 group-hover:inline-flex">
-                      <button onClick={() => startEdit(message)} className="hover:text-neutral-200">
-                        Edit
+                      <button onClick={() => setReplyingTo(message)} className="hover:text-neutral-200">
+                        Reply
                       </button>
                       <button
-                        onClick={() => deleteMessage(message.id)}
-                        className="hover:text-red-400"
+                        onClick={() => setEmojiPickerFor(emojiPickerFor === message.id ? null : message.id)}
+                        className="hover:text-neutral-200"
                       >
-                        Delete
+                        React
                       </button>
+                      <button onClick={() => togglePin(message.id)} className="hover:text-neutral-200">
+                        {message.pinnedAt ? 'Unpin' : 'Pin'}
+                      </button>
+                      {isOwn && (
+                        <>
+                          <button onClick={() => startEdit(message)} className="hover:text-neutral-200">
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => deleteMessage(message.id)}
+                            className="hover:text-red-400"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
                     </span>
                   )}
                 </div>
+                {message.replyTo && (
+                  <div className="ml-8 mb-0.5 truncate border-l-2 border-neutral-700 pl-2 text-xs text-neutral-500">
+                    ↪ {message.replyTo.author?.displayName ?? message.replyTo.bot?.name ?? 'System'}:{' '}
+                    {message.replyTo.content}
+                  </div>
+                )}
                 {isEditing ? (
                   <form onSubmit={submitEdit} className="ml-8 mt-1 flex gap-2">
                     <input
@@ -866,11 +1020,70 @@ export default function Home() {
                       ))}
                   </>
                 )}
+                {(Object.keys(reactionGroups).length > 0 || emojiPickerFor === message.id) && (
+                  <div className="ml-8 mt-1 flex flex-wrap items-center gap-1">
+                    {Object.entries(reactionGroups).map(([emoji, userIds]) => (
+                      <button
+                        key={emoji}
+                        onClick={() => toggleReaction(message, emoji)}
+                        className={`rounded-full border px-1.5 py-0.5 text-xs ${
+                          userIds.includes(currentUserId ?? '')
+                            ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
+                            : 'border-neutral-700 bg-neutral-800 text-neutral-400'
+                        }`}
+                      >
+                        {emoji} {userIds.length}
+                      </button>
+                    ))}
+                    {emojiPickerFor === message.id && (
+                      <span className="flex items-center gap-1 rounded-full border border-neutral-700 bg-neutral-800 px-1.5 py-0.5">
+                        {QUICK_REACTIONS.map((emoji) => (
+                          <button
+                            key={emoji}
+                            onClick={() => toggleReaction(message, emoji)}
+                            className="hover:scale-125"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {seenBy.length > 0 && (
+                  <p className="ml-8 mt-0.5 text-[11px] text-neutral-600">
+                    Seen by {seenBy.map((r) => r.displayName).join(', ')}
+                  </p>
+                )}
               </div>
             );
           })}
           <div ref={messagesEndRef} />
         </div>
+
+        {typingUserIds.length > 0 && (
+          <p className="px-4 pb-1 text-xs italic text-neutral-500">
+            {typingUserIds
+              .map((id) => users.find((u) => u.id === id)?.displayName ?? 'Someone')
+              .join(', ')}{' '}
+            {typingUserIds.length === 1 ? 'is' : 'are'} typing…
+          </p>
+        )}
+
+        {replyingTo && (
+          <div className="flex items-center justify-between border-t border-neutral-800 bg-neutral-900/60 px-4 py-1.5 text-xs text-neutral-400">
+            <span className="truncate">
+              Replying to{' '}
+              <span className="font-medium text-neutral-300">
+                {replyingTo.author?.displayName ?? replyingTo.bot?.name ?? 'System'}
+              </span>
+              : {replyingTo.content}
+            </span>
+            <button onClick={() => setReplyingTo(null)} className="ml-2 shrink-0 hover:text-neutral-200">
+              ✕
+            </button>
+          </div>
+        )}
 
         <form onSubmit={sendMessage} className="flex gap-2 border-t border-neutral-800 p-4">
           <input
@@ -890,7 +1103,7 @@ export default function Home() {
           </button>
           <input
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => handleDraftChange(e.target.value)}
             placeholder={
               uploading
                 ? 'Uploading…'

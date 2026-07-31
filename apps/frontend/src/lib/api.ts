@@ -38,6 +38,11 @@ export interface Attachment {
   size: number;
 }
 
+export interface MessageReaction {
+  emoji: string;
+  userId: string;
+}
+
 export interface ChatMessage {
   id: string;
   channelId: string;
@@ -52,6 +57,15 @@ export interface ChatMessage {
   attachmentName: string | null;
   attachmentMimeType: string | null;
   attachmentSize: number | null;
+  pinnedAt: string | null;
+  replyToId: string | null;
+  reactions: MessageReaction[];
+  replyTo: {
+    id: string;
+    content: string;
+    author: { id: string; displayName: string } | null;
+    bot: { id: string; name: string } | null;
+  } | null;
 }
 
 export interface Bot {
@@ -134,6 +148,20 @@ export function fetchVoiceToken(channelId: string) {
 
 export function fetchMessages(channelId: string) {
   return request<ChatMessage[]>(`/channels/${channelId}/messages`);
+}
+
+export function fetchPinnedMessages(channelId: string) {
+  return request<ChatMessage[]>(`/channels/${channelId}/pinned`);
+}
+
+export interface ReadReceipt {
+  userId: string;
+  displayName: string;
+  lastReadAt: string;
+}
+
+export function fetchReadReceipts(channelId: string) {
+  return request<ReadReceipt[]>(`/channels/${channelId}/read-receipts`);
 }
 
 export function fetchUsers() {
