@@ -18,7 +18,15 @@ import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
-import { ATTACHMENTS_DIR, attachmentFilename, attachmentUpload, ensureDir } from '../uploads/uploads.util';
+import {
+  ATTACHMENTS_DIR,
+  AVATARS_DIR,
+  attachmentFilename,
+  attachmentUpload,
+  avatarFilename,
+  avatarUpload,
+  ensureDir,
+} from '../uploads/uploads.util';
 import { encryptFile } from '../uploads/encryption.util';
 import { ChannelsService } from './channels.service';
 import { VoiceService } from '../voice/voice.service';
@@ -44,17 +52,48 @@ export class ChannelsController {
     @Body('type') type: string | undefined,
     @Body('isPrivate') isPrivate: boolean | undefined,
     @Body('memberIds') memberIds: string[] | undefined,
+    @Body('roleIds') roleIds: string[] | undefined,
     @Req() req: Request,
   ) {
     if (type !== undefined && type !== 'TEXT' && type !== 'VOICE') {
       throw new BadRequestException('type must be TEXT or VOICE');
     }
-    return this.channelsService.create(name, req.user!.userId, type, isPrivate ?? false, memberIds ?? []);
+    return this.channelsService.create(
+      name,
+      req.user!.userId,
+      type,
+      isPrivate ?? false,
+      memberIds ?? [],
+      roleIds ?? [],
+    );
   }
 
   @Post(':id/members')
   addMember(@Param('id') id: string, @Body('userId') targetUserId: string, @Req() req: Request) {
     return this.channelsService.addMember(id, req.user!.userId, targetUserId);
+  }
+
+  @Post(':id/roles')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'MOD')
+  addRole(@Param('id') id: string, @Body('roleId') roleId: string, @Req() req: Request) {
+    return this.channelsService.addRole(id, req.user!.userId, roleId);
+  }
+
+  @Post(':id/avatar')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'MOD')
+  @UseInterceptors(FileInterceptor('avatar', avatarUpload))
+  async uploadChannelAvatar(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request,
+  ) {
+    await this.channelsService.ensureMembership(id, req.user!.userId);
+    ensureDir(AVATARS_DIR);
+    const filename = avatarFilename(id, file.originalname);
+    await writeFile(join(AVATARS_DIR, filename), encryptFile(file.buffer, file.mimetype));
+    return this.channelsService.setAvatar(id, `/uploads/avatars/${filename}`);
   }
 
   @Post(':id/voice-token')

@@ -57,6 +57,31 @@ export class ReportsService implements OnModuleInit {
     return this.prisma.dailyReport.findMany({ orderBy: { date: 'desc' }, take: limit });
   }
 
+  async getUserMetrics(period: 'week' | 'month' | 'year') {
+    const lookbackDays: Record<typeof period, number> = { week: 12 * 7, month: 12 * 31, year: 5 * 366 };
+    const since = new Date(Date.now() - lookbackDays[period] * 24 * 60 * 60 * 1000);
+
+    const rows = await this.prisma.$queryRaw<
+      { bucket: Date; userId: string; displayName: string; messageCount: bigint }[]
+    >`
+      SELECT date_trunc(${period}, m."createdAt") as bucket,
+             u.id as "userId", u."displayName",
+             count(*)::bigint as "messageCount"
+      FROM messages m
+      JOIN users u ON u.id = m."authorId"
+      WHERE m."createdAt" >= ${since}
+      GROUP BY bucket, u.id, u."displayName"
+      ORDER BY bucket ASC
+    `;
+
+    return rows.map((r) => ({
+      bucket: r.bucket,
+      userId: r.userId,
+      displayName: r.displayName,
+      messageCount: Number(r.messageCount),
+    }));
+  }
+
   async generateReport(forDate: Date = new Date()) {
     const startOfDay = new Date(forDate);
     startOfDay.setHours(0, 0, 0, 0);

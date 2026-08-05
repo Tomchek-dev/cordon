@@ -19,6 +19,11 @@ import { SearchModule } from './search/search.module';
 import { PushModule } from './push/push.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
+import { CalendarModule } from './calendar/calendar.module';
+import { PickupsModule } from './pickups/pickups.module';
+import { DockModule } from './dock/dock.module';
+import { GifsModule } from './gifs/gifs.module';
+import { RolesModule } from './roles/roles.module';
 
 @Module({
   imports: [
@@ -39,6 +44,11 @@ import { AuditLogModule } from './audit-log/audit-log.module';
     PushModule,
     UploadsModule,
     AuditLogModule,
+    CalendarModule,
+    PickupsModule,
+    DockModule,
+    GifsModule,
+    RolesModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

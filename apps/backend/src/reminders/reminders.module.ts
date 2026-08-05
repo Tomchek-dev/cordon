@@ -6,5 +6,6 @@ import { RemindersScheduler } from './reminders.scheduler';
 @Module({
   imports: [ChatModule],
   providers: [RemindersService, RemindersScheduler],
+  exports: [RemindersService],
 })
 export class RemindersModule {}

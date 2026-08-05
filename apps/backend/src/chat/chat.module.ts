@@ -5,10 +5,13 @@ import { PresenceModule } from '../presence/presence.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { ChatGateway } from './chat.gateway';
 import { SlashCommandsService } from './slash-commands.service';
+import { BangCommandsService } from './bang-commands.service';
+import { CommandsController } from './commands.controller';
 
 @Module({
   imports: [AuthModule, ChannelsModule, PresenceModule, AuditLogModule],
-  providers: [ChatGateway, SlashCommandsService],
-  exports: [SlashCommandsService],
+  controllers: [CommandsController],
+  providers: [ChatGateway, SlashCommandsService, BangCommandsService],
+  exports: [SlashCommandsService, BangCommandsService],
 })
 export class ChatModule {}

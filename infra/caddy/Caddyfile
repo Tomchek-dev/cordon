@@ -16,7 +16,7 @@ https://pop-os.local, https://pop-os, https://192.168.1.85, https://localhost {
 		Referrer-Policy "strict-origin-when-cross-origin"
 	}
 
-	@backend path /auth /auth/* /channels /channels/* /users /users/* /socket.io /socket.io/* /uploads /uploads/* /bots /bots/* /api /api/* /reports /reports/* /search /search/* /push /push/*
+	@backend path /auth /auth/* /channels /channels/* /users /users/* /socket.io /socket.io/* /uploads /uploads/* /bots /bots/* /api /api/* /reports /reports/* /search /search/* /push /push/* /audit-log /audit-log/* /calendar /calendar/* /dock /dock/* /commands /commands/* /gifs /gifs/* /roles /roles/*
 	handle @backend {
 		reverse_proxy host.docker.internal:3001
 	}

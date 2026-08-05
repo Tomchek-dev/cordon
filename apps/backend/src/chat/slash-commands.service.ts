@@ -39,6 +39,12 @@ export class SlashCommandsService {
     return this.commands.has(name.toLowerCase());
   }
 
+  list(): { name: string; description: string }[] {
+    return Array.from(this.commands.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, { description }]) => ({ name, description }));
+  }
+
   async execute(name: string, ctx: SlashCommandContext): Promise<SlashCommandReply> {
     const command = this.commands.get(name.toLowerCase());
     if (!command) {

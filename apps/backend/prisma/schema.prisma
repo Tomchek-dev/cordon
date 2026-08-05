@@ -42,6 +42,21 @@ enum BotEventType {
   REPORT
 }
 
+enum CalendarVisibility {
+  PERSONAL
+  GENERAL
+}
+
+enum DockDirection {
+  IN
+  OUT
+}
+
+enum DockUnitType {
+  BIN
+  PALLET
+}
+
 model User {
   id           String     @id @default(uuid())
   username     String     @unique
@@ -59,6 +74,10 @@ model User {
   pushSubscriptions PushSubscription[]
   auditLogs         AuditLog[]
   reactions         MessageReaction[]
+  calendarEvents    CalendarEvent[]
+  pickups           Pickup[]
+  dockLogs          DockLog[]
+  roleAssignments   RoleAssignment[]
 
   @@map("users")
 }
@@ -68,11 +87,17 @@ model Channel {
   name      String
   type      ChannelType @default(TEXT)
   isPrivate Boolean     @default(false)
+  avatar    String?
   createdAt DateTime    @default(now())
 
-  members      ChannelMember[]
-  messages     Message[]
-  dailyReports DailyReport[]
+  members        ChannelMember[]
+  messages       Message[]
+  dailyReports   DailyReport[]
+  calendarEvents CalendarEvent[]
+  pickupRotation PickupRotation?
+  pickups        Pickup[]
+  dockLogs       DockLog[]
+  roleAccess     ChannelRoleAccess[]
 
   @@map("channels")
 }
@@ -201,4 +226,99 @@ model AuditLog {
   actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
   @@map("audit_logs")
+}
+
+model CalendarEvent {
+  id           String             @id @default(uuid())
+  title        String
+  notes        String?
+  date         DateTime
+  visibility   CalendarVisibility @default(PERSONAL)
+  createdById  String
+  // Required for GENERAL events - which channel the reminder posts into.
+  channelId    String?
+  reminderSent Boolean            @default(false)
+  createdAt    DateTime           @default(now())
+
+  createdBy User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  channel   Channel? @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@map("calendar_events")
+}
+
+// One rotation per channel - tracks whose turn is next for !me pickup claims.
+model PickupRotation {
+  channelId    String   @id
+  memberOrder  String[]
+  currentIndex Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@map("pickup_rotations")
+}
+
+model Pickup {
+  id           String   @id @default(uuid())
+  channelId    String
+  assignedToId String
+  labelUrl     String
+  createdAt    DateTime @default(now())
+
+  channel    Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  assignedTo User    @relation(fields: [assignedToId], references: [id], onDelete: Cascade)
+
+  @@map("pickups")
+}
+
+model DockLog {
+  id          String        @id @default(uuid())
+  channelId   String
+  direction   DockDirection
+  unitType    DockUnitType
+  quantity    Int
+  destination String?
+  loggedById  String
+  createdAt   DateTime      @default(now())
+
+  channel  Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  loggedBy User    @relation(fields: [loggedById], references: [id], onDelete: Cascade)
+
+  @@map("dock_logs")
+}
+
+// Custom, admin-managed groups (distinct from the fixed UserRole site-permission
+// enum and the per-channel ChannelRole enum) - used only to grant additional
+// access to role-restricted private channels.
+model Role {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  assignments   RoleAssignment[]
+  channelAccess ChannelRoleAccess[]
+
+  @@map("roles")
+}
+
+model RoleAssignment {
+  roleId String
+  userId String
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, userId])
+  @@map("role_assignments")
+}
+
+model ChannelRoleAccess {
+  roleId    String
+  channelId String
+
+  role    Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, channelId])
+  @@map("channel_role_access")
 }

@@ -39,6 +39,25 @@ export class ChannelsService {
       ),
     );
 
+    // Private channels restricted to a role the user holds get the same
+    // join-on-list treatment as public channels - a role grant is an
+    // additional way in, on top of (not instead of) explicit membership.
+    const roleGrantedChannels = await this.prisma.channel.findMany({
+      where: {
+        isPrivate: true,
+        roleAccess: { some: { role: { assignments: { some: { userId } } } } },
+      },
+    });
+    await Promise.all(
+      roleGrantedChannels.map((channel) =>
+        this.prisma.channelMember.upsert({
+          where: { channelId_userId: { channelId: channel.id, userId } },
+          create: { channelId: channel.id, userId },
+          update: {},
+        }),
+      ),
+    );
+
     const memberships = await this.prisma.channelMember.findMany({
       where: { userId },
       include: { channel: true },
@@ -69,7 +88,25 @@ export class ChannelsService {
           dmParticipant = other?.user ?? null;
         }
 
-        return { ...membership.channel, unreadCount, dmParticipant, muted: membership.muted };
+        const lastMessageRow = await this.prisma.message.findFirst({
+          where: { channelId: membership.channelId },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            content: true,
+            createdAt: true,
+            author: { select: { displayName: true } },
+            bot: { select: { name: true } },
+          },
+        });
+        const lastMessage = lastMessageRow
+          ? {
+              content: lastMessageRow.content,
+              createdAt: lastMessageRow.createdAt,
+              senderName: lastMessageRow.author?.displayName ?? lastMessageRow.bot?.name ?? 'System',
+            }
+          : null;
+
+        return { ...membership.channel, unreadCount, dmParticipant, muted: membership.muted, lastMessage };
       }),
     );
   }
@@ -80,6 +117,7 @@ export class ChannelsService {
     type: 'TEXT' | 'VOICE' = 'TEXT',
     isPrivate = false,
     memberIds: string[] = [],
+    roleIds: string[] = [],
   ) {
     const initialMemberIds = [...new Set([ownerId, ...memberIds])];
     const channel = await this.prisma.channel.create({
@@ -93,6 +131,9 @@ export class ChannelsService {
             role: userId === ownerId ? 'OWNER' : 'MEMBER',
           })),
         },
+        roleAccess: {
+          create: roleIds.map((roleId) => ({ roleId })),
+        },
       },
     });
     this.events.emit(CHANNEL_CREATED_EVENT, {
@@ -103,8 +144,41 @@ export class ChannelsService {
       name,
       type,
       isPrivate,
+      roleIds,
     });
     return channel;
+  }
+
+  async addRole(channelId: string, requesterId: string, roleId: string) {
+    const channel = await this.prisma.channel.findUnique({ where: { id: channelId } });
+    if (!channel) {
+      throw new NotFoundException('channel not found');
+    }
+    if (!channel.isPrivate) {
+      throw new ForbiddenException('public channels are open to everyone already');
+    }
+
+    const requesterMembership = await this.prisma.channelMember.findUnique({
+      where: { channelId_userId: { channelId, userId: requesterId } },
+    });
+    if (!requesterMembership || requesterMembership.role === 'MEMBER') {
+      throw new ForbiddenException('only the channel owner or an admin can restrict it to a role');
+    }
+
+    await this.prisma.channelRoleAccess.upsert({
+      where: { roleId_channelId: { roleId, channelId } },
+      create: { roleId, channelId },
+      update: {},
+    });
+    return { ok: true };
+  }
+
+  async setAvatar(channelId: string, avatarUrl: string) {
+    return this.prisma.channel.update({
+      where: { id: channelId },
+      data: { avatar: avatarUrl },
+      select: { id: true, name: true, avatar: true },
+    });
   }
 
   async addMember(channelId: string, requesterId: string, targetUserId: string) {
@@ -181,10 +255,23 @@ export class ChannelsService {
     const membership = await this.prisma.channelMember.findUnique({
       where: { channelId_userId: { channelId, userId } },
     });
-    if (!membership) {
-      throw new ForbiddenException('not a member of this channel');
+    if (membership) {
+      return channel;
     }
-    return channel;
+
+    const hasRoleAccess = await this.prisma.channelRoleAccess.findFirst({
+      where: { channelId, role: { assignments: { some: { userId } } } },
+    });
+    if (hasRoleAccess) {
+      await this.prisma.channelMember.upsert({
+        where: { channelId_userId: { channelId, userId } },
+        create: { channelId, userId },
+        update: {},
+      });
+      return channel;
+    }
+
+    throw new ForbiddenException('not a member of this channel');
   }
 
   async markRead(channelId: string, userId: string) {

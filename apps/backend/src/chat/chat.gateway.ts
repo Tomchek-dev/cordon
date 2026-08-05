@@ -18,6 +18,7 @@ import { PresenceService, PRESENCE_CHANNEL } from '../presence/presence.service'
 import type { PresenceStatus } from '../presence/presence.service';
 import { RedisService } from '../redis/redis.service';
 import { SlashCommandsService } from './slash-commands.service';
+import { BangCommandsService } from './bang-commands.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import {
   MESSAGE_AUTHOR_INCLUDE,
@@ -38,7 +39,7 @@ interface AuthedSocket extends Socket {
   };
 }
 
-@WebSocketGateway({ cors: { origin: process.env.FRONTEND_ORIGIN ?? '*' } })
+@WebSocketGateway({ cors: { origin: process.env.FRONTEND_ORIGIN ?? false } })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit {
   @WebSocketServer()
   server: Server;
@@ -55,6 +56,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     private readonly presenceService: PresenceService,
     private readonly redis: RedisService,
     private readonly slashCommands: SlashCommandsService,
+    private readonly bangCommands: BangCommandsService,
     private readonly events: EventEmitter2,
     private readonly auditLog: AuditLogService,
   ) {}
@@ -131,11 +133,29 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
   @SubscribeMessage('setStatus')
   async handleSetStatus(
-    @MessageBody() status: PresenceStatus,
+    @MessageBody() data: PresenceStatus | { status: PresenceStatus; reason?: string },
     @ConnectedSocket() client: AuthedSocket,
   ) {
+    const status = typeof data === 'string' ? data : data.status;
+    const reason = typeof data === 'string' ? undefined : data.reason;
     if (status !== 'ONLINE' && status !== 'AWAY' && status !== 'BUSY') return;
     await this.presenceService.setStatus(client.data.userId, status);
+
+    // Only announce when a reason was actually given - an ordinary status
+    // flip shouldn't interrupt anyone, but "stepping away for lunch" is
+    // useful for teammates to see in real time.
+    if (reason?.trim()) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: client.data.userId },
+        select: { displayName: true },
+      });
+      this.server.emit('statusReason', {
+        userId: client.data.userId,
+        displayName: user?.displayName ?? 'Someone',
+        status,
+        reason: reason.trim(),
+      });
+    }
   }
 
   @SubscribeMessage('joinChannel')
@@ -180,6 +200,38 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         this.server.to(data.channelId).emit('newMessage', systemMessage);
       }
       return;
+    }
+
+    // "!" commands (warehouse-floor bots) only intercept when actually
+    // registered, unlike "/" which is fully reserved - "!" is common enough
+    // in ordinary chat that an unrecognized one should just post as a message.
+    if (trimmed.startsWith('!') && !data.attachment) {
+      const [commandName, ...rest] = trimmed.slice(1).split(/\s+/);
+      if (this.bangCommands.has(commandName)) {
+        const reply = await this.bangCommands.execute(commandName, {
+          channelId: data.channelId,
+          userId: client.data.userId,
+          args: rest.join(' '),
+        });
+        if (reply?.content) {
+          const systemMessage = await this.prisma.message.create({
+            data: {
+              channelId: data.channelId,
+              content: reply.content,
+              botId: reply.botId,
+              attachmentUrl: reply.attachmentUrl,
+              attachmentName: reply.attachmentName,
+              attachmentMimeType: reply.attachmentMimeType,
+              attachmentSize: reply.attachmentSize,
+            },
+            include: MESSAGE_AUTHOR_INCLUDE,
+          });
+          // Unlike slash-command replies, these are operationally relevant to
+          // the whole team, so they go through the normal notification fan-out.
+          this.events.emit(MESSAGE_CREATED_EVENT, systemMessage satisfies MessageCreatedEvent);
+        }
+        return;
+      }
     }
 
     const message = await this.prisma.message.create({

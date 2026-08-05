@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '../../generated/client';
 import { RedisService } from '../redis/redis.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -16,7 +17,15 @@ export class PresenceService {
 
   async setStatus(userId: string, status: PresenceStatus) {
     await this.redis.client.hset(PRESENCE_HASH, userId, status);
-    await this.prisma.user.update({ where: { id: userId }, data: { status } });
+    try {
+      await this.prisma.user.update({ where: { id: userId }, data: { status } });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        await this.redis.client.hdel(PRESENCE_HASH, userId);
+        return;
+      }
+      throw err;
+    }
     await this.redis.publisher.publish(PRESENCE_CHANNEL, JSON.stringify({ userId, status }));
   }
 
