@@ -152,20 +152,20 @@ export function VoiceCallBar({ channelId, label }: { channelId: string; label: s
   }, [channelId]);
 
   return (
-    <div className="border-b border-neutral-800 bg-neutral-900/60 px-4 py-3">
+    <div className="border-b border-term-line bg-term-panel/60 px-4 py-3">
       {state === 'idle' && (
         <button
           onClick={join}
-          className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500"
+          className="rounded bg-term-green-dim px-3 py-1.5 text-sm font-medium text-term-bg hover:bg-term-green"
         >
           🎙️ Join {label}
         </button>
       )}
-      {state === 'connecting' && <p className="text-sm text-neutral-400">Connecting…</p>}
+      {state === 'connecting' && <p className="text-sm text-term-muted">Connecting…</p>}
       {state === 'error' && (
         <div className="flex items-center gap-2">
-          <p className="text-sm text-red-400">{error}</p>
-          <button onClick={join} className="text-sm text-neutral-400 underline hover:text-neutral-200">
+          <p className="text-sm text-term-red">{error}</p>
+          <button onClick={join} className="text-sm text-term-muted underline hover:text-term-green-bright">
             Retry
           </button>
         </div>
@@ -184,8 +184,8 @@ export function VoiceCallBar({ channelId, label }: { channelId: string; label: s
               e.preventDefault();
               stopTalking();
             }}
-            className={`select-none rounded px-4 py-2 text-sm font-medium text-white transition-colors ${
-              talking ? 'bg-red-600 hover:bg-red-500' : 'bg-neutral-700 hover:bg-neutral-600'
+            className={`select-none rounded px-4 py-2 text-sm font-medium transition-colors ${
+              talking ? 'bg-term-red text-term-bg hover:opacity-90' : 'bg-term-input text-term-green-bright hover:bg-term-line'
             }`}
           >
             {talking ? '🔴 Talking…' : '🎤 Hold to talk'}
@@ -196,15 +196,15 @@ export function VoiceCallBar({ channelId, label }: { channelId: string; label: s
                 key={p.identity}
                 className={`rounded-full px-2 py-1 text-xs ${
                   speakingIdentities.has(p.identity)
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-neutral-800 text-neutral-400'
+                    ? 'bg-term-green-dim text-term-bg'
+                    : 'bg-term-input text-term-muted'
                 }`}
               >
                 {p.name || p.identity}
               </span>
             ))}
           </div>
-          <button onClick={disconnect} className="ml-auto text-sm text-neutral-400 hover:text-red-400">
+          <button onClick={disconnect} className="ml-auto text-sm text-term-muted hover:text-term-red">
             Leave
           </button>
         </div>

@@ -18,10 +18,12 @@ export interface Channel {
   name: string;
   type: 'TEXT' | 'VOICE' | 'DM';
   isPrivate: boolean;
+  avatar: string | null;
   createdAt: string;
   unreadCount: number;
   muted: boolean;
   dmParticipant: Pick<User, 'id' | 'username' | 'displayName' | 'status' | 'avatar'> | null;
+  lastMessage: { content: string; createdAt: string; senderName: string } | null;
 }
 
 export interface MessageAuthor {
@@ -120,10 +122,11 @@ export function createChannel(
   type: 'TEXT' | 'VOICE' = 'TEXT',
   isPrivate = false,
   memberIds: string[] = [],
+  roleIds: string[] = [],
 ) {
   return request<Channel>('/channels', {
     method: 'POST',
-    body: JSON.stringify({ name, type, isPrivate, memberIds }),
+    body: JSON.stringify({ name, type, isPrivate, memberIds, roleIds }),
   });
 }
 
@@ -191,6 +194,15 @@ export function uploadAvatar(file: File) {
   );
 }
 
+export function uploadChannelAvatar(channelId: string, file: File) {
+  const form = new FormData();
+  form.append('avatar', file);
+  return request<{ id: string; name: string; avatar: string }>(`/channels/${channelId}/avatar`, {
+    method: 'POST',
+    body: form,
+  });
+}
+
 export function uploadAttachment(channelId: string, file: File) {
   const form = new FormData();
   form.append('file', file);
@@ -256,6 +268,28 @@ export function generateReportNow() {
   return request<DailyReport>('/reports/generate', { method: 'POST' });
 }
 
+export interface UserMetricRow {
+  bucket: string;
+  userId: string;
+  displayName: string;
+  messageCount: number;
+}
+
+export function fetchReportMetrics(period: 'week' | 'month' | 'year') {
+  return request<UserMetricRow[]>(`/reports/metrics?period=${period}`);
+}
+
+export interface DockMetricRow {
+  bucket: string;
+  direction: 'IN' | 'OUT';
+  unitType: 'BIN' | 'PALLET';
+  totalQuantity: number;
+}
+
+export function fetchDockMetrics(period: 'week' | 'month' | 'year') {
+  return request<DockMetricRow[]>(`/dock/metrics?period=${period}`);
+}
+
 export interface SearchResult extends ChatMessage {
   channel: { id: string; name: string; type: 'TEXT' | 'VOICE' | 'DM' };
 }
@@ -292,9 +326,103 @@ export function subscribePush(sub: PushSubscriptionJSON) {
   });
 }
 
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  notes: string | null;
+  date: string;
+  visibility: 'PERSONAL' | 'GENERAL';
+  channelId: string | null;
+  createdById: string;
+  createdBy: { id: string; displayName: string };
+  reminderSent: boolean;
+  createdAt: string;
+}
+
+export function fetchCalendarEvents() {
+  return request<CalendarEvent[]>('/calendar');
+}
+
+export function createCalendarEvent(input: {
+  title: string;
+  notes?: string;
+  date: string;
+  visibility: 'PERSONAL' | 'GENERAL';
+  channelId?: string;
+}) {
+  return request<CalendarEvent>('/calendar', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteCalendarEvent(id: string) {
+  return request<{ ok: true }>(`/calendar/${id}`, { method: 'DELETE' });
+}
+
 export function unsubscribePush(endpoint: string) {
   return request<{ ok: true }>('/push/subscribe', {
     method: 'DELETE',
     body: JSON.stringify({ endpoint }),
+  });
+}
+
+export interface CommandInfo {
+  name: string;
+  description: string;
+}
+
+export function fetchCommands() {
+  return request<{ slash: CommandInfo[]; bang: CommandInfo[] }>('/commands');
+}
+
+export function fetchGifsEnabled() {
+  return request<{ enabled: boolean }>('/gifs/enabled');
+}
+
+export interface GifResult {
+  id: string;
+  previewUrl: string;
+  url: string;
+  description: string;
+}
+
+export function searchGifs(query: string) {
+  return request<GifResult[]>(`/gifs/search?q=${encodeURIComponent(query)}`);
+}
+
+export interface Role {
+  id: string;
+  name: string;
+  userIds: string[];
+}
+
+export function fetchRoles() {
+  return request<Role[]>('/roles');
+}
+
+export function createRole(name: string) {
+  return request<Role>('/roles', { method: 'POST', body: JSON.stringify({ name }) });
+}
+
+export function deleteRole(id: string) {
+  return request<{ ok: true }>(`/roles/${id}`, { method: 'DELETE' });
+}
+
+export function assignRole(roleId: string, userId: string) {
+  return request<{ ok: true }>(`/roles/${roleId}/assign`, {
+    method: 'POST',
+    body: JSON.stringify({ userId }),
+  });
+}
+
+export function unassignRole(roleId: string, userId: string) {
+  return request<{ ok: true }>(`/roles/${roleId}/assign/${userId}`, { method: 'DELETE' });
+}
+
+export function addChannelRole(channelId: string, roleId: string) {
+  return request<{ ok: true }>(`/channels/${channelId}/roles`, {
+    method: 'POST',
+    body: JSON.stringify({ roleId }),
   });
 }

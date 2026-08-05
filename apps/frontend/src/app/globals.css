@@ -1,26 +1,60 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --term-bg: #070a08;
+  --term-panel: #0c120e;
+  --term-input: #0a1410;
+  --term-green: #33ff66;
+  --term-green-bright: #7dffa0;
+  --term-green-dim: #1f8a3f;
+  --term-line: #16401f;
+  --term-amber: #ffb000;
+  --term-red: #ff4d4d;
+  --term-muted: #5fae78;
+  /* Fixed across both themes - modal backdrops need to stay dark even in light mode. */
+  --term-overlay: rgba(10, 15, 10, 0.55);
+}
+
+:root[data-theme="light"] {
+  --term-bg: #f2f5ef;
+  --term-panel: #ffffff;
+  --term-input: #e8efe4;
+  --term-green: #178a3f;
+  --term-green-bright: #0d3319;
+  --term-green-dim: #1f9d4d;
+  --term-line: #d3ddcd;
+  --term-amber: #a15c00;
+  --term-red: #c1352b;
+  --term-muted: #5c6f5f;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-term-bg: var(--term-bg);
+  --color-term-panel: var(--term-panel);
+  --color-term-input: var(--term-input);
+  --color-term-green: var(--term-green);
+  --color-term-green-bright: var(--term-green-bright);
+  --color-term-green-dim: var(--term-green-dim);
+  --color-term-line: var(--term-line);
+  --color-term-amber: var(--term-amber);
+  --color-term-red: var(--term-red);
+  --color-term-muted: var(--term-muted);
+  --color-term-overlay: var(--term-overlay);
+  --font-sans: var(--font-jetbrains-mono);
+  --font-mono: var(--font-jetbrains-mono);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--term-bg);
+  color: var(--term-green-bright);
+  font-family: var(--font-jetbrains-mono), "Share Tech Mono", monospace;
+}
+
+::selection {
+  background: var(--term-green-dim);
+  color: var(--term-bg);
+}
+
+* {
+  scrollbar-color: var(--term-green-dim) var(--term-bg);
 }

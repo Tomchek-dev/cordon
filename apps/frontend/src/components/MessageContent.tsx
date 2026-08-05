@@ -6,7 +6,7 @@ export function MessageContent({ content }: { content: string }) {
     <>
       {parts.map((part, i) =>
         i % 2 === 1 ? (
-          <span key={i} className="rounded bg-indigo-500/20 px-1 text-indigo-300">
+          <span key={i} className="rounded bg-term-green-dim/20 px-1 text-term-green-bright">
             @{part}
           </span>
         ) : (

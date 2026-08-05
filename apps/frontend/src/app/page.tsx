@@ -8,26 +8,37 @@ import {
   type ChatMessage,
   type ReadReceipt,
   type PresenceStatus,
+  type Role,
   type User,
+  type GifResult,
   createChannel,
   createDm,
   fetchChannels,
+  fetchGifsEnabled,
   fetchMe,
   fetchMessages,
   fetchPinnedMessages,
   fetchReadReceipts,
+  fetchRoles,
   fetchUsers,
   setChannelMuted,
   setNotifyDmOnly,
   uploadAttachment,
   uploadAvatar,
+  uploadChannelAvatar,
 } from '@/lib/api';
 import { decodeToken } from '@/lib/jwt';
 import { disconnectSocket, getSocket } from '@/lib/socket';
 import { sendDesktopNotification, setDesktopUnreadCount } from '@/lib/tauri';
 import { Avatar } from '@/components/Avatar';
-import { AuditLogPanel } from '@/components/AuditLogPanel';
+import { Plus, Smile, Film, LayoutGrid, Sun, Moon } from 'lucide-react';
+import { getTheme, setTheme, type Theme } from '@/lib/theme';
+import { AdminDashboard } from '@/components/AdminDashboard';
+import { CalendarPanel } from '@/components/CalendarPanel';
 import { BotsPanel } from '@/components/BotsPanel';
+import { EmojiPickerPopover } from '@/components/EmojiPickerPopover';
+import { CommandsLauncherPopover } from '@/components/CommandsLauncherPopover';
+import { GifPickerPopover } from '@/components/GifPickerPopover';
 import { ReportsPanel } from '@/components/ReportsPanel';
 import { MessageContent } from '@/components/MessageContent';
 import { PushNotificationToggle } from '@/components/PushNotificationToggle';
@@ -54,6 +65,9 @@ export default function Home() {
 
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(320);
+  const [membersPanelOpen, setMembersPanelOpen] = useState(false);
+  const [theme, setThemeState] = useState<Theme>('dark');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [draft, setDraft] = useState('');
@@ -64,6 +78,8 @@ export default function Home() {
   const [newChannelType, setNewChannelType] = useState<'TEXT' | 'VOICE'>('TEXT');
   const [newChannelPrivate, setNewChannelPrivate] = useState(false);
   const [newChannelMemberIds, setNewChannelMemberIds] = useState<string[]>([]);
+  const [newChannelRoleIds, setNewChannelRoleIds] = useState<string[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [dmCallOpen, setDmCallOpen] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -74,19 +90,29 @@ export default function Home() {
   const [readReceipts, setReadReceipts] = useState<ReadReceipt[]>([]);
   const [emojiPickerFor, setEmojiPickerFor] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [statusToast, setStatusToast] = useState<string | null>(null);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  const [awayReasonPromptOpen, setAwayReasonPromptOpen] = useState(false);
+  const [awayReasonDraft, setAwayReasonDraft] = useState('');
   const [uploading, setUploading] = useState(false);
   const [botsPanelOpen, setBotsPanelOpen] = useState(false);
   const [reportsPanelOpen, setReportsPanelOpen] = useState(false);
-  const [auditLogPanelOpen, setAuditLogPanelOpen] = useState(false);
+  const [adminDashboardOpen, setAdminDashboardOpen] = useState(false);
+  const [calendarPanelOpen, setCalendarPanelOpen] = useState(false);
   const [searchPanelOpen, setSearchPanelOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [notifyDmOnly, setNotifyDmOnlyState] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showGifPicker, setShowGifPicker] = useState(false);
+  const [showCommandsMenu, setShowCommandsMenu] = useState(false);
+  const [gifsEnabled, setGifsEnabled] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const composerInputRef = useRef<HTMLInputElement | null>(null);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const channelAvatarInputRef = useRef<HTMLInputElement | null>(null);
   // Keeps socket listeners (registered once) aware of the currently active channel.
   const activeChannelIdRef = useRef<string | null>(null);
   const currentUserIdRef = useRef<string | null>(null);
@@ -96,6 +122,38 @@ export default function Home() {
   // Tracks an explicit Away/Busy choice so the automatic tab-visibility switch
   // (below) doesn't silently override it back to Online.
   const manualStatusRef = useRef<'AWAY' | 'BUSY' | null>(null);
+
+  useEffect(() => {
+    const saved = Number(localStorage.getItem('sidebarWidth'));
+    if (saved >= 240 && saved <= 560) {
+      setSidebarWidth(saved);
+    }
+    setThemeState(getTheme());
+  }, []);
+
+  function toggleTheme() {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    setThemeState(next);
+  }
+
+  function startSidebarResize(e: React.MouseEvent) {
+    e.preventDefault();
+    function handleMouseMove(moveEvent: MouseEvent) {
+      const next = Math.min(560, Math.max(240, moveEvent.clientX));
+      setSidebarWidth(next);
+    }
+    function handleMouseUp() {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      setSidebarWidth((current) => {
+        localStorage.setItem('sidebarWidth', String(current));
+        return current;
+      });
+    }
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }
 
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
@@ -116,22 +174,27 @@ export default function Home() {
       if (message.channelId === activeChannelIdRef.current) {
         setMessages((prev) => [...prev, message]);
       }
-      if (
-        message.channelId !== activeChannelIdRef.current &&
-        message.authorId !== currentUserIdRef.current
-      ) {
-        setChannels((prev) => {
-          if (!prev.some((c) => c.id === message.channelId)) {
-            // First message on a channel we don't know about yet (e.g. someone just
-            // opened a DM with us) - refetch the list instead of guessing its shape.
-            fetchChannels().then(setChannels);
-            return prev;
-          }
-          return prev.map((c) =>
-            c.id === message.channelId ? { ...c, unreadCount: c.unreadCount + 1 } : c,
-          );
-        });
-      }
+
+      const lastMessage = {
+        content: message.content,
+        createdAt: message.createdAt,
+        senderName: message.author?.displayName ?? message.bot?.name ?? 'System',
+      };
+      const bumpUnread = message.channelId !== activeChannelIdRef.current && message.authorId !== currentUserIdRef.current;
+
+      setChannels((prev) => {
+        if (!prev.some((c) => c.id === message.channelId)) {
+          // First message on a channel we don't know about yet (e.g. someone just
+          // opened a DM with us) - refetch the list instead of guessing its shape.
+          fetchChannels().then(setChannels);
+          return prev;
+        }
+        return prev.map((c) =>
+          c.id === message.channelId
+            ? { ...c, lastMessage, unreadCount: bumpUnread ? c.unreadCount + 1 : c.unreadCount }
+            : c,
+        );
+      });
     });
 
     socket.on('messageUpdated', (message: ChatMessage) => {
@@ -233,21 +296,31 @@ export default function Home() {
       setTimeout(() => setErrorMessage(null), 4000);
     });
 
+    socket.on(
+      'statusReason',
+      ({ userId, displayName, reason }: { userId: string; displayName: string; status: string; reason: string }) => {
+        if (userId === currentUserIdRef.current) return;
+        setStatusToast(`🚶 ${displayName} stepped away: ${reason}`);
+        setTimeout(() => setStatusToast(null), 6000);
+      },
+    );
+
     function handleVisibility() {
       // A manual Away/Busy choice sticks until the user changes it themselves.
       if (manualStatusRef.current) return;
       const next = document.hidden ? 'AWAY' : 'ONLINE';
-      socket.emit('setStatus', next);
+      socket.emit('setStatus', { status: next });
       if (currentUserIdRef.current) {
         setPresence((prev) => ({ ...prev, [currentUserIdRef.current!]: next }));
       }
     }
     document.addEventListener('visibilitychange', handleVisibility);
 
-    Promise.all([fetchChannels(), fetchUsers(), fetchMe()])
-      .then(([channelList, userList, me]) => {
+    Promise.all([fetchChannels(), fetchUsers(), fetchMe(), fetchRoles().catch(() => [])])
+      .then(([channelList, userList, me, roleList]) => {
         setChannels(channelList);
         setUsers(userList);
+        setRoles(roleList);
         // Merge rather than overwrite: a live 'presence' event may have already
         // arrived over the socket before this REST snapshot resolves, and it
         // should win over this potentially-stale DB read.
@@ -274,6 +347,10 @@ export default function Home() {
     activeChannelIdRef.current = activeChannelId;
     setTypingUserIds([]);
   }, [activeChannelId]);
+
+  useEffect(() => {
+    fetchGifsEnabled().then(({ enabled }) => setGifsEnabled(enabled));
+  }, []);
 
   useEffect(() => {
     channelsRef.current = channels;
@@ -368,6 +445,7 @@ export default function Home() {
       newChannelType,
       newChannelPrivate,
       newChannelPrivate ? newChannelMemberIds : [],
+      newChannelPrivate ? newChannelRoleIds : [],
     );
     // Same as openDm: refetch for the enriched shape (unreadCount, dmParticipant) rather
     // than trusting the raw create response.
@@ -376,12 +454,19 @@ export default function Home() {
     setNewChannelName('');
     setNewChannelPrivate(false);
     setNewChannelMemberIds([]);
+    setNewChannelRoleIds([]);
     setActiveChannelId(channel.id);
   }
 
   function toggleNewChannelMember(userId: string) {
     setNewChannelMemberIds((prev) =>
       prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
+    );
+  }
+
+  function toggleNewChannelRole(roleId: string) {
+    setNewChannelRoleIds((prev) =>
+      prev.includes(roleId) ? prev.filter((id) => id !== roleId) : [...prev, roleId],
     );
   }
 
@@ -406,13 +491,15 @@ export default function Home() {
     router.push('/login');
   }
 
-  function handleStatusChange(status: 'ONLINE' | 'AWAY' | 'BUSY') {
+  function handleStatusChange(status: 'ONLINE' | 'AWAY' | 'BUSY', reason?: string) {
     manualStatusRef.current = status === 'ONLINE' ? null : status;
-    socketRef.current?.emit('setStatus', status);
+    socketRef.current?.emit('setStatus', { status, reason });
     if (currentUserId) {
       setPresence((prev) => ({ ...prev, [currentUserId]: status }));
     }
     setStatusMenuOpen(false);
+    setAwayReasonPromptOpen(false);
+    setAwayReasonDraft('');
   }
 
   function selectChannel(channelId: string) {
@@ -460,6 +547,24 @@ export default function Home() {
     }
   }
 
+  async function handleChannelAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !activeChannelId) return;
+    setUploading(true);
+    try {
+      const updated = await uploadChannelAvatar(activeChannelId, file);
+      setChannels((prev) =>
+        prev.map((c) => (c.id === activeChannelId ? { ...c, avatar: updated.avatar } : c)),
+      );
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Channel avatar upload failed');
+      setTimeout(() => setErrorMessage(null), 4000);
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function handleAttachmentChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -481,9 +586,36 @@ export default function Home() {
     }
   }
 
+  function insertAtCursor(text: string) {
+    const input = composerInputRef.current;
+    if (!input) {
+      setDraft((prev) => prev + text);
+      return;
+    }
+    const start = input.selectionStart ?? draft.length;
+    const end = input.selectionEnd ?? draft.length;
+    const next = draft.slice(0, start) + text + draft.slice(end);
+    setDraft(next);
+    requestAnimationFrame(() => {
+      input.focus();
+      const cursor = start + text.length;
+      input.setSelectionRange(cursor, cursor);
+    });
+  }
+
+  function sendGif(gif: GifResult) {
+    if (!activeChannelId) return;
+    socketRef.current?.emit('sendMessage', {
+      channelId: activeChannelId,
+      content: '',
+      attachment: { url: gif.url, filename: 'gif.gif', mimeType: 'image/gif', size: 0 },
+    });
+    setShowGifPicker(false);
+  }
+
   if (!ready) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-neutral-950 text-neutral-500">
+      <div className="flex h-screen w-full items-center justify-center bg-term-bg text-term-muted">
         Loading…
       </div>
     );
@@ -504,24 +636,25 @@ export default function Home() {
   const currentStatus = currentUserId ? (presence[currentUserId] ?? 'ONLINE') : 'ONLINE';
 
   return (
-    <div className="flex h-screen w-full bg-neutral-950 text-neutral-100">
+    <div className="flex h-screen w-full bg-term-bg text-term-green-bright">
       {mobileNavOpen && (
         <div
           onClick={() => setMobileNavOpen(false)}
-          className="fixed inset-0 z-20 bg-black/60 md:hidden"
+          className="fixed inset-0 z-20 bg-term-overlay md:hidden"
         />
       )}
 
       <aside
-        className={`${mobileNavOpen ? 'flex' : 'hidden'} fixed inset-y-0 left-0 z-30 w-64 flex-col border-r border-neutral-800 bg-neutral-900 md:static md:z-auto md:flex`}
+        style={{ width: sidebarWidth }}
+        className={`${mobileNavOpen ? 'flex' : 'hidden'} fixed inset-y-0 left-0 z-30 shrink-0 flex-col border-r border-term-line bg-term-panel md:static md:z-auto md:flex`}
       >
-        <div className="border-b border-neutral-800 p-4">
+        <div className="border-b border-term-line p-4">
           <div className="flex items-center justify-between">
             <h1 className="text-sm font-semibold">Internal Chat</h1>
             <button
               onClick={() => setSearchPanelOpen(true)}
               title="Search messages"
-              className="text-neutral-500 hover:text-neutral-200"
+              className="text-term-muted hover:text-term-green-bright"
             >
               🔍
             </button>
@@ -551,25 +684,67 @@ export default function Home() {
               <div className="relative">
                 <button
                   onClick={() => setStatusMenuOpen((v) => !v)}
-                  className="flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-200"
+                  className="flex items-center gap-1 text-xs text-term-muted hover:text-term-green-bright"
                 >
                   <span>{username}</span>
-                  <span className="text-neutral-600">
+                  <span className="text-term-muted">
                     · {STATUS_OPTIONS.find((s) => s.value === currentStatus)?.label ?? currentStatus}
                   </span>
                 </button>
                 {statusMenuOpen && (
-                  <div className="absolute left-0 top-full z-10 mt-1 w-48 rounded border border-neutral-700 bg-neutral-800 py-1 shadow-lg">
-                    {STATUS_OPTIONS.map((option) => (
-                      <button
-                        key={option.value}
-                        onClick={() => handleStatusChange(option.value)}
-                        className="block w-full px-2 py-1 text-left text-xs text-neutral-300 hover:bg-neutral-700"
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                    <label className="mt-1 flex cursor-pointer items-center gap-2 border-t border-neutral-700 px-2 pt-1.5 text-xs text-neutral-300 hover:bg-neutral-700">
+                  <div className="absolute left-0 top-full z-10 mt-1 w-48 rounded border border-term-line bg-term-input py-1 shadow-lg">
+                    {!awayReasonPromptOpen &&
+                      STATUS_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={() =>
+                            option.value === 'AWAY'
+                              ? setAwayReasonPromptOpen(true)
+                              : handleStatusChange(option.value)
+                          }
+                          className="block w-full px-2 py-1 text-left text-xs text-term-green-bright hover:bg-term-line"
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    {awayReasonPromptOpen && (
+                      <div className="px-2 py-1">
+                        <p className="mb-1 text-[11px] text-term-muted">Stepping away for…</p>
+                        <div className="mb-1 flex flex-wrap gap-1">
+                          {['Lunch', 'Bathroom', 'Meeting', 'Break'].map((preset) => (
+                            <button
+                              key={preset}
+                              onClick={() => handleStatusChange('AWAY', preset)}
+                              className="rounded border border-term-line px-1.5 py-0.5 text-[11px] text-term-green-bright hover:bg-term-line"
+                            >
+                              {preset}
+                            </button>
+                          ))}
+                        </div>
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            handleStatusChange('AWAY', awayReasonDraft || undefined);
+                          }}
+                          className="flex gap-1"
+                        >
+                          <input
+                            autoFocus
+                            value={awayReasonDraft}
+                            onChange={(e) => setAwayReasonDraft(e.target.value)}
+                            placeholder="Custom reason…"
+                            className="flex-1 rounded border border-term-line bg-term-panel px-1.5 py-0.5 text-[11px] outline-none focus:border-term-green"
+                          />
+                          <button
+                            type="submit"
+                            className="rounded bg-term-green-dim px-2 py-0.5 text-[11px] font-medium text-term-bg hover:bg-term-green"
+                          >
+                            Go
+                          </button>
+                        </form>
+                      </div>
+                    )}
+                    <label className="mt-1 flex cursor-pointer items-center gap-2 border-t border-term-line px-2 pt-1.5 text-xs text-term-green-bright hover:bg-term-line">
                       <input
                         type="checkbox"
                         checked={notifyDmOnly}
@@ -587,38 +762,47 @@ export default function Home() {
 
         <nav className="flex-1 space-y-4 overflow-y-auto p-2">
           <div>
-            <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+            <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-term-muted">
               Channels
             </p>
             {publicChannels.length === 0 && (
-              <p className="px-2 py-1 text-xs text-neutral-600">No channels yet</p>
+              <p className="px-2 py-1 text-xs text-term-muted">No channels yet</p>
             )}
             {publicChannels.map((channel) => (
               <div
                 key={channel.id}
                 className={`group flex w-full items-center rounded text-sm ${
                   channel.id === activeChannelId
-                    ? 'bg-neutral-800 text-white'
-                    : 'text-neutral-400 hover:bg-neutral-800/50'
+                    ? 'bg-term-input text-term-green-bright'
+                    : 'text-term-muted hover:bg-term-input/50'
                 }`}
               >
                 <button
                   onClick={() => selectChannel(channel.id)}
-                  className="flex flex-1 items-center justify-between px-2 py-1.5 text-left"
+                  className="flex min-w-0 flex-1 flex-col items-start gap-0.5 px-3 py-2.5 text-left"
                 >
-                  <span className={channel.muted ? 'opacity-50' : ''}>
-                    {channel.isPrivate ? '🔒' : '#'} {channel.name}
-                  </span>
-                  {channel.unreadCount > 0 && (
-                    <span className="rounded-full bg-indigo-600 px-1.5 text-[10px] font-semibold text-white">
-                      {channel.unreadCount}
+                  <span className="flex w-full items-center justify-between">
+                    <span className={`flex items-center gap-1.5 ${channel.muted ? 'opacity-50' : ''}`}>
+                      <Avatar id={channel.id} displayName={channel.name} avatarUrl={channel.avatar} size={18} />
+                      {channel.isPrivate && <span className="text-xs">🔒</span>}
+                      {channel.name}
                     </span>
-                  )}
+                    {channel.unreadCount > 0 && (
+                      <span className="rounded-full bg-term-green-dim px-1.5 text-[10px] font-semibold text-term-bg">
+                        {channel.unreadCount}
+                      </span>
+                    )}
+                  </span>
+                  <span className="w-full truncate text-xs text-term-muted">
+                    {channel.lastMessage
+                      ? `${channel.lastMessage.senderName}: ${channel.lastMessage.content || '📎 Attachment'}`
+                      : 'No messages yet'}
+                  </span>
                 </button>
                 <button
                   onClick={() => handleToggleMute(channel.id, !channel.muted)}
                   title={channel.muted ? 'Unmute' : 'Mute'}
-                  className="hidden px-2 text-xs text-neutral-500 hover:text-neutral-200 group-hover:block"
+                  className="hidden px-2 text-xs text-term-muted hover:text-term-green-bright group-hover:block"
                 >
                   {channel.muted ? '🔕' : '🔔'}
                 </button>
@@ -630,9 +814,9 @@ export default function Home() {
                   value={newChannelName}
                   onChange={(e) => setNewChannelName(e.target.value)}
                   placeholder="New channel"
-                  className="w-full rounded border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs outline-none focus:border-neutral-500"
+                  className="w-full rounded border border-term-line bg-term-input px-2 py-1 text-xs outline-none focus:border-term-green"
                 />
-                <div className="flex gap-2 text-[11px] text-neutral-500">
+                <div className="flex gap-2 text-[11px] text-term-muted">
                   <label className="flex items-center gap-1">
                     <input
                       type="radio"
@@ -650,7 +834,7 @@ export default function Home() {
                     Voice
                   </label>
                 </div>
-                <label className="flex items-center gap-1 text-[11px] text-neutral-500">
+                <label className="flex items-center gap-1 text-[11px] text-term-muted">
                   <input
                     type="checkbox"
                     checked={newChannelPrivate}
@@ -659,11 +843,11 @@ export default function Home() {
                   🔒 Private
                 </label>
                 {newChannelPrivate && (
-                  <div className="max-h-24 space-y-0.5 overflow-y-auto rounded border border-neutral-800 p-1">
+                  <div className="max-h-24 space-y-0.5 overflow-y-auto rounded border border-term-line p-1">
                     {otherUsers.map((user) => (
                       <label
                         key={user.id}
-                        className="flex items-center gap-1 px-1 text-[11px] text-neutral-400"
+                        className="flex items-center gap-1 px-1 text-[11px] text-term-muted"
                       >
                         <input
                           type="checkbox"
@@ -675,13 +859,31 @@ export default function Home() {
                     ))}
                   </div>
                 )}
+                {newChannelPrivate && roles.length > 0 && (
+                  <div className="max-h-24 space-y-0.5 overflow-y-auto rounded border border-term-line p-1">
+                    <p className="px-1 text-[10px] uppercase tracking-wide text-term-muted">Restrict to roles</p>
+                    {roles.map((role) => (
+                      <label
+                        key={role.id}
+                        className="flex items-center gap-1 px-1 text-[11px] text-term-muted"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={newChannelRoleIds.includes(role.id)}
+                          onChange={() => toggleNewChannelRole(role.id)}
+                        />
+                        {role.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
               </form>
             )}
           </div>
 
           {voiceChannels.length > 0 && (
             <div>
-              <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+              <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-term-muted">
                 Voice Channels
               </p>
               {voiceChannels.map((channel) => (
@@ -690,8 +892,8 @@ export default function Home() {
                   onClick={() => selectChannel(channel.id)}
                   className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm ${
                     channel.id === activeChannelId
-                      ? 'bg-neutral-800 text-white'
-                      : 'text-neutral-400 hover:bg-neutral-800/50'
+                      ? 'bg-term-input text-term-green-bright'
+                      : 'text-term-muted hover:bg-term-input/50'
                   }`}
                 >
                   <span>
@@ -705,7 +907,7 @@ export default function Home() {
 
           {dmChannels.length > 0 && (
             <div>
-              <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+              <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-term-muted">
                 Direct Messages
               </p>
               {dmChannels.map((channel) => (
@@ -713,36 +915,43 @@ export default function Home() {
                   key={channel.id}
                   className={`group flex w-full items-center rounded text-sm ${
                     channel.id === activeChannelId
-                      ? 'bg-neutral-800 text-white'
-                      : 'text-neutral-400 hover:bg-neutral-800/50'
+                      ? 'bg-term-input text-term-green-bright'
+                      : 'text-term-muted hover:bg-term-input/50'
                   }`}
                 >
                   <button
                     onClick={() => selectChannel(channel.id)}
-                    className="flex flex-1 items-center justify-between px-2 py-1.5 text-left"
+                    className="flex min-w-0 flex-1 flex-col items-start gap-0.5 px-3 py-2.5 text-left"
                   >
-                    <span className={`flex items-center gap-2 ${channel.muted ? 'opacity-50' : ''}`}>
-                      {channel.dmParticipant && (
-                        <Avatar
-                          id={channel.dmParticipant.id}
-                          displayName={channel.dmParticipant.displayName}
-                          avatarUrl={channel.dmParticipant.avatar}
-                          status={presence[channel.dmParticipant.id] ?? 'OFFLINE'}
-                          size={20}
-                        />
-                      )}
-                      {channel.dmParticipant?.displayName ?? 'Direct message'}
-                    </span>
-                    {channel.unreadCount > 0 && (
-                      <span className="rounded-full bg-indigo-600 px-1.5 text-[10px] font-semibold text-white">
-                        {channel.unreadCount}
+                    <span className="flex w-full items-center justify-between">
+                      <span className={`flex items-center gap-2 ${channel.muted ? 'opacity-50' : ''}`}>
+                        {channel.dmParticipant && (
+                          <Avatar
+                            id={channel.dmParticipant.id}
+                            displayName={channel.dmParticipant.displayName}
+                            avatarUrl={channel.dmParticipant.avatar}
+                            status={presence[channel.dmParticipant.id] ?? 'OFFLINE'}
+                            size={32}
+                          />
+                        )}
+                        {channel.dmParticipant?.displayName ?? 'Direct message'}
                       </span>
-                    )}
+                      {channel.unreadCount > 0 && (
+                        <span className="rounded-full bg-term-green-dim px-1.5 text-[10px] font-semibold text-term-bg">
+                          {channel.unreadCount}
+                        </span>
+                      )}
+                    </span>
+                    <span className="w-full truncate pl-10 text-xs text-term-muted">
+                      {channel.lastMessage
+                        ? `${channel.lastMessage.senderName}: ${channel.lastMessage.content || '📎 Attachment'}`
+                        : 'No messages yet'}
+                    </span>
                   </button>
                   <button
                     onClick={() => handleToggleMute(channel.id, !channel.muted)}
                     title={channel.muted ? 'Unmute' : 'Mute'}
-                    className="hidden px-2 text-xs text-neutral-500 hover:text-neutral-200 group-hover:block"
+                    className="hidden px-2 text-xs text-term-muted hover:text-term-green-bright group-hover:block"
                   >
                     {channel.muted ? '🔕' : '🔔'}
                   </button>
@@ -750,64 +959,79 @@ export default function Home() {
               ))}
             </div>
           )}
-
-          <div>
-            <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-              Members
-            </p>
-            {otherUsers.map((user) => (
-              <button
-                key={user.id}
-                onClick={() => openDm(user.id)}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-neutral-400 hover:bg-neutral-800/50"
-              >
-                <Avatar
-                  id={user.id}
-                  displayName={user.displayName}
-                  avatarUrl={user.avatar}
-                  status={presence[user.id] ?? 'OFFLINE'}
-                  size={20}
-                />
-                {user.displayName}
-              </button>
-            ))}
-          </div>
         </nav>
 
         <button
+          onClick={() => setCalendarPanelOpen(true)}
+          className="border-t border-term-line p-2 text-left text-xs text-term-muted hover:text-term-green-bright"
+        >
+          Calendar
+        </button>
+        <button
           onClick={() => setReportsPanelOpen(true)}
-          className="border-t border-neutral-800 p-2 text-left text-xs text-neutral-500 hover:text-neutral-300"
+          className="border-t border-term-line p-2 text-left text-xs text-term-muted hover:text-term-green-bright"
         >
           Reports
         </button>
+        {canCreateChannels && (
+          <button
+            onClick={() => setAdminDashboardOpen(true)}
+            className="border-t border-term-line p-2 text-left text-xs text-term-muted hover:text-term-green-bright"
+          >
+            Admin
+          </button>
+        )}
         <button
           onClick={() => setBotsPanelOpen(true)}
-          className="border-t border-neutral-800 p-2 text-left text-xs text-neutral-500 hover:text-neutral-300"
+          className="border-t border-term-line p-2 text-left text-xs text-term-muted hover:text-term-green-bright"
         >
           Bots
         </button>
-        {currentUser?.role === 'ADMIN' && (
-          <button
-            onClick={() => setAuditLogPanelOpen(true)}
-            className="border-t border-neutral-800 p-2 text-left text-xs text-neutral-500 hover:text-neutral-300"
-          >
-            Audit Log
-          </button>
-        )}
-        <div className="border-t border-neutral-800">
+        <div className="border-t border-term-line">
           <PushNotificationToggle />
         </div>
         <button
+          onClick={toggleTheme}
+          className="flex w-full items-center gap-1.5 border-t border-term-line p-2 text-left text-xs text-term-muted hover:text-term-green-bright"
+        >
+          {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+          {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+        </button>
+        <button
           onClick={handleLogout}
-          className="border-t border-neutral-800 p-2 text-left text-xs text-neutral-500 hover:text-neutral-300"
+          className="border-t border-term-line p-2 text-left text-xs text-term-muted hover:text-term-green-bright"
         >
           Log out
         </button>
       </aside>
 
+      <div
+        onMouseDown={startSidebarResize}
+        className="hidden w-1 shrink-0 cursor-col-resize bg-term-line/0 hover:bg-term-green-dim md:block"
+      />
+
       {botsPanelOpen && <BotsPanel onClose={() => setBotsPanelOpen(false)} />}
       {reportsPanelOpen && <ReportsPanel onClose={() => setReportsPanelOpen(false)} />}
-      {auditLogPanelOpen && <AuditLogPanel onClose={() => setAuditLogPanelOpen(false)} />}
+      {adminDashboardOpen && (
+        <AdminDashboard
+          currentUserRole={currentUser?.role}
+          onClose={() => {
+            setAdminDashboardOpen(false);
+            // Roles may have changed while the dashboard was open (created/deleted) -
+            // refresh so the new-channel role-restriction checklist stays current.
+            fetchRoles()
+              .then(setRoles)
+              .catch(() => {});
+          }}
+        />
+      )}
+      {calendarPanelOpen && (
+        <CalendarPanel
+          channels={channels}
+          currentUserId={currentUserId}
+          onClose={() => setCalendarPanelOpen(false)}
+        />
+      )}
       {searchPanelOpen && (
         <SearchPanel
           channels={channels}
@@ -817,53 +1041,107 @@ export default function Home() {
       )}
 
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-3 border-b border-neutral-800 px-4 py-3">
+        <header className="flex items-center gap-3 border-b border-term-line px-4 py-3">
           <button
             onClick={() => setMobileNavOpen(true)}
-            className="text-neutral-400 hover:text-neutral-200 md:hidden"
+            className="text-term-muted hover:text-term-green-bright md:hidden"
             title="Open channels"
           >
             ☰
           </button>
-          <h2 className="text-sm font-semibold">
+          {activeChannel && activeChannel.type !== 'DM' && (
+            <>
+              <input
+                ref={channelAvatarInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleChannelAvatarChange}
+              />
+              <button
+                onClick={() => canCreateChannels && channelAvatarInputRef.current?.click()}
+                title={canCreateChannels ? 'Change channel avatar' : undefined}
+                className={canCreateChannels ? 'rounded-full opacity-90 hover:opacity-100' : 'cursor-default'}
+              >
+                <Avatar id={activeChannel.id} displayName={activeChannel.name} avatarUrl={activeChannel.avatar} size={28} />
+              </button>
+            </>
+          )}
+          <h2 className="flex items-center gap-1 text-sm font-semibold">
+            {activeChannel?.isPrivate && <span>🔒</span>}
             {activeChannel
               ? activeChannel.type === 'DM'
                 ? activeChannelLabel
                 : activeChannel.type === 'VOICE'
                   ? `🔊 ${activeChannelLabel}`
-                  : `# ${activeChannelLabel}`
+                  : activeChannelLabel
               : 'Select a channel'}
           </h2>
-          {activeChannel && (
-            <button
-              onClick={() => setPinnedPanelOpen((open) => !open)}
-              className={`text-xs font-medium ${
-                activeChannel.type !== 'DM' ? 'ml-auto' : ''
-              } ${pinnedPanelOpen ? 'text-indigo-400' : 'text-neutral-400 hover:text-neutral-200'}`}
-            >
-              📌 Pinned{pinnedMessages.length > 0 ? ` (${pinnedMessages.length})` : ''}
-            </button>
-          )}
-          {activeChannel?.type === 'DM' && (
-            <button
-              onClick={() => setDmCallOpen((open) => !open)}
-              className={`ml-2 rounded px-2 py-1 text-xs font-medium ${
-                dmCallOpen ? 'bg-emerald-700 text-white' : 'text-neutral-400 hover:bg-neutral-800'
-              }`}
-            >
-              📞 {dmCallOpen ? 'Hide call' : 'Call'}
-            </button>
-          )}
+          <div className="ml-auto flex items-center gap-2">
+            {activeChannel && (
+              <button
+                onClick={() => setPinnedPanelOpen((open) => !open)}
+                className={`text-xs font-medium ${
+                  pinnedPanelOpen ? 'text-term-green-bright' : 'text-term-muted hover:text-term-green-bright'
+                }`}
+              >
+                📌 Pinned{pinnedMessages.length > 0 ? ` (${pinnedMessages.length})` : ''}
+              </button>
+            )}
+            {activeChannel?.type === 'DM' && (
+              <button
+                onClick={() => setDmCallOpen((open) => !open)}
+                className={`rounded px-2 py-1 text-xs font-medium ${
+                  dmCallOpen ? 'bg-term-green-dim text-term-bg' : 'text-term-muted hover:bg-term-input'
+                }`}
+              >
+                📞 {dmCallOpen ? 'Hide call' : 'Call'}
+              </button>
+            )}
+            <div className="relative">
+              <button
+                onClick={() => setMembersPanelOpen((open) => !open)}
+                className={`rounded px-2 py-1 text-xs font-medium ${
+                  membersPanelOpen ? 'text-term-green-bright' : 'text-term-muted hover:text-term-green-bright'
+                }`}
+              >
+                👥 Members
+              </button>
+              {membersPanelOpen && (
+                <div className="absolute right-0 top-full z-10 mt-1 max-h-80 w-56 overflow-y-auto rounded border border-term-line bg-term-panel p-1 shadow-lg">
+                  {otherUsers.map((user) => (
+                    <button
+                      key={user.id}
+                      onClick={() => {
+                        openDm(user.id);
+                        setMembersPanelOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-term-muted hover:bg-term-input/50"
+                    >
+                      <Avatar
+                        id={user.id}
+                        displayName={user.displayName}
+                        avatarUrl={user.avatar}
+                        status={presence[user.id] ?? 'OFFLINE'}
+                        size={20}
+                      />
+                      {user.displayName}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </header>
 
         {pinnedPanelOpen && (
-          <div className="max-h-40 overflow-y-auto border-b border-neutral-800 bg-neutral-900/60 px-4 py-2">
+          <div className="max-h-40 overflow-y-auto border-b border-term-line bg-term-panel/60 px-4 py-2">
             {pinnedMessages.length === 0 ? (
-              <p className="text-xs text-neutral-600">No pinned messages in this channel.</p>
+              <p className="text-xs text-term-muted">No pinned messages in this channel.</p>
             ) : (
               pinnedMessages.map((m) => (
-                <div key={m.id} className="py-1 text-xs text-neutral-400">
-                  <span className="font-medium text-neutral-300">
+                <div key={m.id} className="py-1 text-xs text-term-muted">
+                  <span className="font-medium text-term-green-bright">
                     {m.author?.displayName ?? m.bot?.name ?? 'System'}:
                   </span>{' '}
                   {m.content}
@@ -885,15 +1163,21 @@ export default function Home() {
         )}
 
         {errorMessage && (
-          <div className="border-b border-red-900 bg-red-950/50 px-4 py-2 text-xs text-red-300">
+          <div className="border-b border-term-red bg-term-red/10 px-4 py-2 text-xs text-term-red">
             {errorMessage}
           </div>
         )}
 
+        {statusToast && (
+          <div className="border-b border-term-line bg-term-panel/60 px-4 py-2 text-xs text-term-green-bright">
+            {statusToast}
+          </div>
+        )}
+
         <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-          {messagesLoading && <p className="text-xs text-neutral-600">Loading messages…</p>}
+          {messagesLoading && <p className="text-xs text-term-muted">Loading messages…</p>}
           {!messagesLoading && activeChannel && messages.length === 0 && (
-            <p className="text-xs text-neutral-600">No messages yet. Say hello.</p>
+            <p className="text-xs text-term-muted">No messages yet. Say hello.</p>
           )}
           {messages.map((message, index) => {
             const isOwn = message.authorId === currentUserId;
@@ -915,41 +1199,41 @@ export default function Home() {
                     avatarUrl={message.author?.avatar}
                     size={22}
                   />
-                  <span className="font-medium text-neutral-200">
+                  <span className="font-medium text-term-green-bright">
                     {message.author?.displayName ?? message.bot?.name ?? 'System'}
                   </span>
                   {message.bot && (
-                    <span className="rounded bg-neutral-700 px-1 text-[10px] font-semibold uppercase text-neutral-300">
+                    <span className="rounded bg-term-line px-1 text-[10px] font-semibold uppercase text-term-green-bright">
                       Bot
                     </span>
                   )}
-                  <span className="text-xs text-neutral-500">
+                  <span className="text-xs text-term-muted">
                     {new Date(message.createdAt).toLocaleTimeString()}
                   </span>
-                  {message.editedAt && <span className="text-xs text-neutral-600">(edited)</span>}
-                  {message.pinnedAt && <span className="text-xs text-indigo-400">📌 pinned</span>}
+                  {message.editedAt && <span className="text-xs text-term-muted">(edited)</span>}
+                  {message.pinnedAt && <span className="text-xs text-term-green-bright">📌 pinned</span>}
                   {!isEditing && (
-                    <span className="ml-2 hidden gap-2 text-xs text-neutral-500 group-hover:inline-flex">
-                      <button onClick={() => setReplyingTo(message)} className="hover:text-neutral-200">
+                    <span className="ml-2 hidden gap-2 text-xs text-term-muted group-hover:inline-flex">
+                      <button onClick={() => setReplyingTo(message)} className="hover:text-term-green-bright">
                         Reply
                       </button>
                       <button
                         onClick={() => setEmojiPickerFor(emojiPickerFor === message.id ? null : message.id)}
-                        className="hover:text-neutral-200"
+                        className="hover:text-term-green-bright"
                       >
                         React
                       </button>
-                      <button onClick={() => togglePin(message.id)} className="hover:text-neutral-200">
+                      <button onClick={() => togglePin(message.id)} className="hover:text-term-green-bright">
                         {message.pinnedAt ? 'Unpin' : 'Pin'}
                       </button>
                       {isOwn && (
                         <>
-                          <button onClick={() => startEdit(message)} className="hover:text-neutral-200">
+                          <button onClick={() => startEdit(message)} className="hover:text-term-green-bright">
                             Edit
                           </button>
                           <button
                             onClick={() => deleteMessage(message.id)}
-                            className="hover:text-red-400"
+                            className="hover:text-term-red"
                           >
                             Delete
                           </button>
@@ -959,7 +1243,7 @@ export default function Home() {
                   )}
                 </div>
                 {message.replyTo && (
-                  <div className="ml-8 mb-0.5 truncate border-l-2 border-neutral-700 pl-2 text-xs text-neutral-500">
+                  <div className="ml-8 mb-0.5 truncate border-l-2 border-term-line pl-2 text-xs text-term-muted">
                     ↪ {message.replyTo.author?.displayName ?? message.replyTo.bot?.name ?? 'System'}:{' '}
                     {message.replyTo.content}
                   </div>
@@ -970,18 +1254,18 @@ export default function Home() {
                       autoFocus
                       value={editDraft}
                       onChange={(e) => setEditDraft(e.target.value)}
-                      className="flex-1 rounded border border-neutral-700 bg-neutral-800 px-2 py-1 text-sm outline-none focus:border-neutral-500"
+                      className="flex-1 rounded border border-term-line bg-term-input px-2 py-1 text-sm outline-none focus:border-term-green"
                     />
                     <button
                       type="submit"
-                      className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium hover:bg-indigo-500"
+                      className="rounded bg-term-green-dim px-2 py-1 text-xs font-medium text-term-bg hover:bg-term-green"
                     >
                       Save
                     </button>
                     <button
                       type="button"
                       onClick={() => setEditingId(null)}
-                      className="rounded px-2 py-1 text-xs text-neutral-400 hover:text-neutral-200"
+                      className="rounded px-2 py-1 text-xs text-term-muted hover:text-term-green-bright"
                     >
                       Cancel
                     </button>
@@ -989,7 +1273,7 @@ export default function Home() {
                 ) : (
                   <>
                     {message.content && (
-                      <p className="ml-8 text-neutral-300">
+                      <p className="ml-8 text-term-green-bright">
                         <MessageContent content={message.content} />
                       </p>
                     )}
@@ -999,7 +1283,7 @@ export default function Home() {
                         <img
                           src={message.attachmentUrl}
                           alt={message.attachmentName ?? 'attachment'}
-                          className="ml-8 mt-1 max-h-64 max-w-xs rounded border border-neutral-800"
+                          className="ml-8 mt-1 max-h-64 max-w-xs rounded border border-term-line"
                         />
                       ) : (
                         <a
@@ -1007,12 +1291,12 @@ export default function Home() {
                           target="_blank"
                           rel="noopener noreferrer"
                           download={message.attachmentName}
-                          className="ml-8 mt-1 flex w-fit items-center gap-2 rounded border border-neutral-700 bg-neutral-800 px-3 py-2 text-xs text-neutral-300 hover:border-neutral-500"
+                          className="ml-8 mt-1 flex w-fit items-center gap-2 rounded border border-term-line bg-term-input px-3 py-2 text-xs text-term-green-bright hover:border-term-green"
                         >
                           <span>📎</span>
                           <span>{message.attachmentName}</span>
                           {message.attachmentSize != null && (
-                            <span className="text-neutral-500">
+                            <span className="text-term-muted">
                               {formatBytes(message.attachmentSize)}
                             </span>
                           )}
@@ -1028,15 +1312,15 @@ export default function Home() {
                         onClick={() => toggleReaction(message, emoji)}
                         className={`rounded-full border px-1.5 py-0.5 text-xs ${
                           userIds.includes(currentUserId ?? '')
-                            ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
-                            : 'border-neutral-700 bg-neutral-800 text-neutral-400'
+                            ? 'border-term-green bg-term-green-dim/20 text-term-green-bright'
+                            : 'border-term-line bg-term-input text-term-muted'
                         }`}
                       >
                         {emoji} {userIds.length}
                       </button>
                     ))}
                     {emojiPickerFor === message.id && (
-                      <span className="flex items-center gap-1 rounded-full border border-neutral-700 bg-neutral-800 px-1.5 py-0.5">
+                      <span className="flex items-center gap-1 rounded-full border border-term-line bg-term-input px-1.5 py-0.5">
                         {QUICK_REACTIONS.map((emoji) => (
                           <button
                             key={emoji}
@@ -1051,7 +1335,7 @@ export default function Home() {
                   </div>
                 )}
                 {seenBy.length > 0 && (
-                  <p className="ml-8 mt-0.5 text-[11px] text-neutral-600">
+                  <p className="ml-8 mt-0.5 text-[11px] text-term-muted">
                     Seen by {seenBy.map((r) => r.displayName).join(', ')}
                   </p>
                 )}
@@ -1062,7 +1346,7 @@ export default function Home() {
         </div>
 
         {typingUserIds.length > 0 && (
-          <p className="px-4 pb-1 text-xs italic text-neutral-500">
+          <p className="px-4 pb-1 text-xs italic text-term-muted">
             {typingUserIds
               .map((id) => users.find((u) => u.id === id)?.displayName ?? 'Someone')
               .join(', ')}{' '}
@@ -1071,21 +1355,21 @@ export default function Home() {
         )}
 
         {replyingTo && (
-          <div className="flex items-center justify-between border-t border-neutral-800 bg-neutral-900/60 px-4 py-1.5 text-xs text-neutral-400">
+          <div className="flex items-center justify-between border-t border-term-line bg-term-panel/60 px-4 py-1.5 text-xs text-term-muted">
             <span className="truncate">
               Replying to{' '}
-              <span className="font-medium text-neutral-300">
+              <span className="font-medium text-term-green-bright">
                 {replyingTo.author?.displayName ?? replyingTo.bot?.name ?? 'System'}
               </span>
               : {replyingTo.content}
             </span>
-            <button onClick={() => setReplyingTo(null)} className="ml-2 shrink-0 hover:text-neutral-200">
+            <button onClick={() => setReplyingTo(null)} className="ml-2 shrink-0 hover:text-term-green-bright">
               ✕
             </button>
           </div>
         )}
 
-        <form onSubmit={sendMessage} className="flex gap-2 border-t border-neutral-800 p-4">
+        <form onSubmit={sendMessage} className="flex gap-2 border-t border-term-line p-4">
           <input
             ref={fileInputRef}
             type="file"
@@ -1097,27 +1381,87 @@ export default function Home() {
             onClick={() => fileInputRef.current?.click()}
             disabled={!activeChannel || uploading}
             title="Attach a file"
-            className="rounded border border-neutral-700 px-3 py-2 text-sm text-neutral-400 hover:border-neutral-500 hover:text-neutral-200 disabled:opacity-50"
+            className="rounded border border-term-line px-3 py-2 text-sm text-term-muted hover:border-term-green hover:text-term-green-bright disabled:opacity-50"
           >
-            📎
+            <Plus size={16} />
           </button>
-          <input
-            value={draft}
-            onChange={(e) => handleDraftChange(e.target.value)}
-            placeholder={
-              uploading
-                ? 'Uploading…'
-                : activeChannel
-                  ? `Message ${activeChannelLabel}`
-                  : 'Select a channel'
-            }
-            disabled={!activeChannel}
-            className="flex-1 rounded border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm outline-none focus:border-neutral-500 disabled:opacity-50"
-          />
+          <div className="relative flex-1">
+            <input
+              ref={composerInputRef}
+              value={draft}
+              onChange={(e) => handleDraftChange(e.target.value)}
+              placeholder={
+                uploading
+                  ? 'Uploading…'
+                  : activeChannel
+                    ? `Message ${activeChannelLabel}`
+                    : 'Select a channel'
+              }
+              disabled={!activeChannel}
+              className="w-full rounded border border-term-line bg-term-input py-2 pl-3 pr-28 text-sm text-term-green-bright outline-none focus:border-term-green disabled:opacity-50"
+            />
+            <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1.5 text-term-muted">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEmojiPicker((v) => !v);
+                  setShowGifPicker(false);
+                  setShowCommandsMenu(false);
+                }}
+                title="Emoji"
+                className="hover:text-term-green-bright"
+              >
+                <Smile size={16} />
+              </button>
+              {gifsEnabled && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowGifPicker((v) => !v);
+                    setShowEmojiPicker(false);
+                    setShowCommandsMenu(false);
+                  }}
+                  title="GIF"
+                  className="hover:text-term-green-bright"
+                >
+                  <Film size={16} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCommandsMenu((v) => !v);
+                  setShowEmojiPicker(false);
+                  setShowGifPicker(false);
+                }}
+                title="Bot commands"
+                className="hover:text-term-green-bright"
+              >
+                <LayoutGrid size={16} />
+              </button>
+            </div>
+
+            {showEmojiPicker && (
+              <EmojiPickerPopover
+                onSelect={(emoji) => insertAtCursor(emoji)}
+                onClose={() => setShowEmojiPicker(false)}
+              />
+            )}
+            {showGifPicker && <GifPickerPopover onSelect={sendGif} onClose={() => setShowGifPicker(false)} />}
+            {showCommandsMenu && (
+              <CommandsLauncherPopover
+                onSelect={(prefixedName) => {
+                  insertAtCursor(prefixedName);
+                  setShowCommandsMenu(false);
+                }}
+                onClose={() => setShowCommandsMenu(false)}
+              />
+            )}
+          </div>
           <button
             type="submit"
             disabled={!activeChannel || !draft.trim()}
-            className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium hover:bg-indigo-500 disabled:opacity-50"
+            className="rounded bg-term-green-dim px-4 py-2 text-sm font-medium text-term-bg hover:bg-term-green disabled:opacity-50"
           >
             Send
           </button>

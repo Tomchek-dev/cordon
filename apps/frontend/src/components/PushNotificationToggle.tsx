@@ -68,7 +68,7 @@ export function PushNotificationToggle() {
     <button
       onClick={subscribed ? disable : enable}
       disabled={busy}
-      className="w-full px-2 py-1.5 text-left text-xs text-neutral-500 hover:text-neutral-300 disabled:opacity-50"
+      className="w-full px-2 py-1.5 text-left text-xs text-term-muted hover:text-term-green-bright disabled:opacity-50"
     >
       {subscribed ? '🔔 Notifications on' : '🔕 Enable notifications'}
     </button>

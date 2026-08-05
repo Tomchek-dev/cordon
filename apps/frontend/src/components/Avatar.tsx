@@ -2,10 +2,10 @@ import type { PresenceStatus } from '@/lib/api';
 import { colorFor, initials } from '@/lib/avatar';
 
 const STATUS_COLOR: Record<PresenceStatus, string> = {
-  ONLINE: '#22c55e',
-  AWAY: '#eab308',
-  BUSY: '#ef4444',
-  OFFLINE: '#525252',
+  ONLINE: '#33ff66',
+  AWAY: '#ffb000',
+  BUSY: '#ff4d4d',
+  OFFLINE: '#5fae78',
 };
 
 export function Avatar({
@@ -32,7 +32,7 @@ export function Avatar({
         />
       ) : (
         <span
-          className="flex h-full w-full items-center justify-center rounded-full text-xs font-semibold text-white"
+          className="flex h-full w-full items-center justify-center rounded-full text-xs font-semibold text-term-bg"
           style={{ backgroundColor: colorFor(id) }}
         >
           {initials(displayName)}
@@ -40,7 +40,7 @@ export function Avatar({
       )}
       {status && (
         <span
-          className="absolute -bottom-0.5 -right-0.5 rounded-full ring-2 ring-neutral-900"
+          className="absolute -bottom-0.5 -right-0.5 rounded-full ring-2 ring-term-panel"
           style={{ width: size * 0.32, height: size * 0.32, backgroundColor: STATUS_COLOR[status] }}
         />
       )}

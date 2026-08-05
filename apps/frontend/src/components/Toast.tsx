@@ -29,12 +29,12 @@ export function ToastStack({
         <button
           key={toast.id}
           onClick={() => onOpen(toast.id)}
-          className="flex items-start gap-2 rounded border border-neutral-700 bg-neutral-800 p-3 text-left shadow-lg hover:border-neutral-500"
+          className="flex items-start gap-2 rounded border border-term-line bg-term-panel p-3 text-left shadow-lg hover:border-term-green-dim"
         >
           <span>{KIND_ICON[toast.kind]}</span>
           <span className="flex-1 overflow-hidden">
-            <span className="block text-xs font-semibold text-neutral-200">{toast.title}</span>
-            <span className="block truncate text-xs text-neutral-400">{toast.preview}</span>
+            <span className="block text-xs font-semibold text-term-green-bright">{toast.title}</span>
+            <span className="block truncate text-xs text-term-muted">{toast.preview}</span>
           </span>
           <span
             role="button"
@@ -42,7 +42,7 @@ export function ToastStack({
               e.stopPropagation();
               onDismiss(toast.id);
             }}
-            className="text-neutral-500 hover:text-neutral-300"
+            className="text-term-muted hover:text-term-green-bright"
           >
             ✕
           </span>
