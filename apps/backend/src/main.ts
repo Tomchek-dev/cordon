@@ -6,10 +6,12 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  // All traffic arrives via exactly one hop (Caddy), so trust its
-  // X-Forwarded-For instead of reading req.ip as Caddy's own address —
-  // otherwise every client behind the proxy shares one rate-limit bucket.
-  app.set('trust proxy', 1);
+  // Trust X-Forwarded-For for exactly this many reverse-proxy hops instead of
+  // reading req.ip as the nearest proxy's own address - otherwise every
+  // client behind the proxy chain shares one rate-limit bucket. Defaults to
+  // 1 (Caddy alone); set TRUST_PROXY_HOPS=2 when Caddy itself sits behind an
+  // existing nginx (see setup.sh --behind-nginx).
+  app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));
   // Frontend and backend share an origin behind Caddy, so browser traffic
   // never needs cross-origin CORS. Only enable it if FRONTEND_ORIGIN is
   // explicitly set for some other deployment shape.

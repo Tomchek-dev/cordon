@@ -165,6 +165,18 @@ similarly gated.
 - `PresenceService.setStatus` used to crash the whole backend process if it
   tried to update a user record that no longer exists (e.g. disconnect after
   account deletion) — now caught gracefully (P2025 handling).
+- Deploying onto a server that already runs other sites behind nginx (the
+  scenario in `cordon-plan-v2.md` §3.3) is now a supported `setup.sh
+  --behind-nginx` path, not just a manually-applied lesson: it binds Caddy
+  to `127.0.0.1:<port>` (via `CADDY_HTTP_BIND`/`CADDY_HTTPS_BIND`/
+  `CADDY_HTTP_PORT`/`CADDY_HTTPS_PORT` in `.env`, consumed by
+  `docker-compose.prod.yml`'s port mappings) and generates
+  `infra/nginx/cordon.conf` (gitignored, rendered from
+  `infra/nginx/cordon.conf.template`) for manual review/install. Also sets
+  `TRUST_PROXY_HOPS=2` so the backend's Express `trust proxy` setting
+  (`apps/backend/src/main.ts`) correctly unwinds two proxy hops
+  (nginx → Caddy) instead of one — get this wrong and every client behind
+  the proxy chain shares one rate-limit bucket again.
 
 ---
 

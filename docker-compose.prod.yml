@@ -49,6 +49,11 @@ services:
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${VAPID_SUBJECT}
       UPLOADS_ENCRYPTION_KEY: ${UPLOADS_ENCRYPTION_KEY}
+      # Number of trusted reverse-proxy hops in front of this container - 1 for
+      # Caddy alone (default), 2 when Caddy itself sits behind an existing
+      # nginx (see setup.sh --behind-nginx). Wrong value here means every
+      # client behind the proxy chain shares one rate-limit bucket.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
     volumes:
       - backend_uploads:/app/uploads
 
@@ -68,8 +73,12 @@ services:
       - frontend
       - livekit
     ports:
-      - "80:80"
-      - "443:443"
+      # Bound to 0.0.0.0 by default (Caddy owns 80/443 directly). When run
+      # behind an existing nginx (setup.sh --behind-nginx), these are bound
+      # to 127.0.0.1 on alternate ports instead, and nginx reverse-proxies
+      # to Caddy's loopback HTTPS port - see infra/nginx/cordon.conf.
+      - "${CADDY_HTTP_BIND:-0.0.0.0}:${CADDY_HTTP_PORT:-80}:80"
+      - "${CADDY_HTTPS_BIND:-0.0.0.0}:${CADDY_HTTPS_PORT:-443}:443"
     volumes:
       - ./infra/caddy/Caddyfile.prod:/etc/caddy/Caddyfile:ro
       - ./infra/caddy/certs:/etc/caddy/certs:ro
