@@ -2,11 +2,11 @@
 	auto_https off
 }
 
-http://${LAN_HOSTNAME}, http://${LAN_IP}, http://localhost {
+:80 {
 	redir https://{host}{uri} permanent
 }
 
-https://${LAN_HOSTNAME}, https://${LAN_IP}, https://localhost {
+:443 {
 	tls /etc/caddy/certs/lan.pem /etc/caddy/certs/lan-key.pem
 
 	header {

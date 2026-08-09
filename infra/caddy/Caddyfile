@@ -2,11 +2,11 @@
 	auto_https off
 }
 
-http://pop-os.local, http://pop-os, http://192.168.1.85, http://localhost {
+:80 {
 	redir https://{host}{uri} permanent
 }
 
-https://pop-os.local, https://pop-os, https://192.168.1.85, https://localhost {
+:443 {
 	tls /etc/caddy/certs/lan.pem /etc/caddy/certs/lan-key.pem
 
 	header {
