@@ -148,8 +148,14 @@ similarly gated.
 
 - Container-internal port in Caddyfile/LiveKit config must match Docker
   Compose's container-side port number, not the host-side one.
-- Caddy site blocks must match by port (`:443`) as well as hostname, since
-  bare-IP/no-SNI clients won't match a hostname-only block.
+- Caddy site blocks match by port (`:443`/`:80`) only, not hostname —
+  bare-IP/no-SNI clients (curl on an IP target, the Tauri desktop app's
+  WebView, and generally any raw-IP connection per RFC 6066) don't match a
+  hostname-only block and get a TLS `internal_error`. This was documented as
+  a lesson in `cordon-plan-v2.md` §3.2 well before it was actually applied
+  to the Caddyfile — verify the fix is still live if this ever regresses
+  (`grep ':443 {' infra/caddy/Caddyfile`), since a doc claiming a fix isn't
+  the same as the fix existing.
 - LiveKit's listening port, the backend's `LIVEKIT_HOST`, and the Caddyfile's
   `/livekit/*` proxy target must all agree — currently all `7880`, verified
   working.
