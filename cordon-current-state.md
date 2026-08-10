@@ -63,6 +63,7 @@ Enums: `ChannelType`, `ChannelRole`, `UserStatus`, `UserRole`, `BotEventType`,
 | `push` | Web Push (VAPID) subscribe/unsubscribe, public key endpoint |
 | `uploads` | Multer config (5MB avatars / 25MB attachments), AES-256-GCM encrypt/decrypt, serving |
 | `audit-log` | Central audit trail (`GET /audit-log`, ADMIN); every privileged action (role changes, channel creation, dock/pickup activity, etc.) logs here |
+| `assistant` | Assistant Bot — replies when `@assistant` is mentioned in a channel message, using the last ~12 messages as context. No HTTP routes (event-listener only). Gated on `ANTHROPIC_API_KEY` being set (`AssistantService.isEnabled()`); boots and registers cleanly with no key, just stays silent — same "build it, gate it" posture as the GIF picker's `TENOR_API_KEY` gate. |
 | `notifications` | `NOTIFICATION_EVENT` fan-out — push notifications + in-app toasts, respects per-user/per-channel mute preferences |
 | `redis` / `prisma` | Infra wiring |
 
@@ -120,6 +121,9 @@ similarly gated.
   30s scheduler
 - Daily reports: Claude-generated end-of-day channel summaries, posted
   automatically, viewable history
+- Assistant Bot (`@assistant`): Claude-powered chat assistant, replies inline
+  when mentioned; inactive until `ANTHROPIC_API_KEY` is set (built and wired,
+  just gated on the key)
 - Report metrics: weekly/monthly/yearly per-user message-activity charts
 - Shipping pickup bot (`!me`): fair round-robin rotation per channel,
   auto-enrolls on first use, generates a printable PNG label (encrypted at rest)
@@ -171,6 +175,20 @@ similarly gated.
 - `PresenceService.setStatus` used to crash the whole backend process if it
   tried to update a user record that no longer exists (e.g. disconnect after
   account deletion) — now caught gracefully (P2025 handling).
+- If voice calls fail client-side with "could not establish signal connection"
+  (either the DNS-flavored "load Failed" or "websocket error during connection
+  establishment"), check two separate things before assuming it's a code bug:
+  (1) `LIVEKIT_WS_URL` in `apps/backend/.env` — must point at a hostname/IP
+  that actually resolves to this machine on the current network, not a
+  colliding mDNS name (see the `pop-os.local` lesson above); (2) whether the
+  `livekit` container actually ended up on the same Docker network as `caddy`
+  — `docker inspect atlantis-livekit-1 --format '{{json .NetworkSettings.Networks}}'`
+  should show `atlantis_default` (same as caddy), not `{}`. It's been observed
+  coming up fully detached (no network, no published ports) after a host
+  reboot even though `docker ps` shows it as "Up" with no visible error —
+  `docker compose up -d --force-recreate livekit` fixes it. Caddy's
+  `reverse_proxy livekit:7880` fails to resolve the hostname entirely when
+  this happens (confirm via `docker exec atlantis-caddy-1 wget -qO- http://livekit:7880/`).
 - Deploying onto a server that already runs other sites behind nginx (the
   scenario in `cordon-plan-v2.md` §3.3) is now a supported `setup.sh
   --behind-nginx` path, not just a manually-applied lesson: it binds Caddy

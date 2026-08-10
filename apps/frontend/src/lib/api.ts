@@ -19,6 +19,8 @@ export interface Channel {
   type: 'TEXT' | 'VOICE' | 'DM';
   isPrivate: boolean;
   avatar: string | null;
+  isAnnouncementChannel: boolean;
+  botId: string | null;
   createdAt: string;
   unreadCount: number;
   muted: boolean;
@@ -123,10 +125,11 @@ export function createChannel(
   isPrivate = false,
   memberIds: string[] = [],
   roleIds: string[] = [],
+  isAnnouncementChannel = false,
 ) {
   return request<Channel>('/channels', {
     method: 'POST',
-    body: JSON.stringify({ name, type, isPrivate, memberIds, roleIds }),
+    body: JSON.stringify({ name, type, isPrivate, memberIds, roleIds, isAnnouncementChannel }),
   });
 }
 
@@ -178,6 +181,13 @@ export function createDm(userId: string) {
   });
 }
 
+export function createBotDm(botId: string) {
+  return request<Channel>('/channels/bot-dm', {
+    method: 'POST',
+    body: JSON.stringify({ botId }),
+  });
+}
+
 export function setUserRole(userId: string, role: UserRole) {
   return request<User>(`/users/${userId}/role`, {
     method: 'PATCH',
@@ -216,6 +226,10 @@ export function fetchBots() {
   return request<Bot[]>('/bots');
 }
 
+export function fetchDmEnabledBots() {
+  return request<{ id: string; name: string }[]>('/bots/dm-available');
+}
+
 export function createBot(name: string, webhookUrl?: string) {
   return request<Bot & { token: string }>('/bots', {
     method: 'POST',
@@ -238,6 +252,13 @@ export function setChannelMuted(channelId: string, muted: boolean) {
   return request<{ muted: boolean }>(`/channels/${channelId}/mute`, {
     method: 'PATCH',
     body: JSON.stringify({ muted }),
+  });
+}
+
+export function setAnnouncementMode(channelId: string, enabled: boolean) {
+  return request<{ id: string; isAnnouncementChannel: boolean }>(`/channels/${channelId}/announcement-mode`, {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
   });
 }
 

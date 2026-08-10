@@ -52,6 +52,10 @@ export class BotsService {
     return this.prisma.bot.findMany({ where: { ownerId }, select: BOT_SELECT });
   }
 
+  findDmEnabled() {
+    return this.prisma.bot.findMany({ where: { dmEnabled: true }, select: { id: true, name: true } });
+  }
+
   async update(ownerId: string, botId: string, dto: UpdateBotDto) {
     const bot = await this.prisma.bot.findUnique({ where: { id: botId } });
     if (!bot) throw new NotFoundException('bot not found');

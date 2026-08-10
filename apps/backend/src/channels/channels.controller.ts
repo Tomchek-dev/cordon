@@ -53,6 +53,7 @@ export class ChannelsController {
     @Body('isPrivate') isPrivate: boolean | undefined,
     @Body('memberIds') memberIds: string[] | undefined,
     @Body('roleIds') roleIds: string[] | undefined,
+    @Body('isAnnouncementChannel') isAnnouncementChannel: boolean | undefined,
     @Req() req: Request,
   ) {
     if (type !== undefined && type !== 'TEXT' && type !== 'VOICE') {
@@ -65,7 +66,15 @@ export class ChannelsController {
       isPrivate ?? false,
       memberIds ?? [],
       roleIds ?? [],
+      isAnnouncementChannel ?? false,
     );
+  }
+
+  @Patch(':id/announcement-mode')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  setAnnouncementMode(@Param('id') id: string, @Body('enabled') enabled: boolean, @Req() req: Request) {
+    return this.channelsService.setAnnouncementMode(id, enabled, req.user!.userId);
   }
 
   @Post(':id/members')
@@ -105,6 +114,11 @@ export class ChannelsController {
   @Post('dm')
   createDm(@Body('userId') targetUserId: string, @Req() req: Request) {
     return this.channelsService.createDm(req.user!.userId, targetUserId);
+  }
+
+  @Post('bot-dm')
+  createBotDm(@Body('botId') botId: string, @Req() req: Request) {
+    return this.channelsService.createBotDm(req.user!.userId, botId);
   }
 
   @Get(':id/messages')

@@ -83,12 +83,16 @@ model User {
 }
 
 model Channel {
-  id        String      @id @default(uuid())
-  name      String
-  type      ChannelType @default(TEXT)
-  isPrivate Boolean     @default(false)
-  avatar    String?
-  createdAt DateTime    @default(now())
+  id                    String      @id @default(uuid())
+  name                  String
+  type                  ChannelType @default(TEXT)
+  isPrivate             Boolean     @default(false)
+  avatar                String?
+  isAnnouncementChannel Boolean     @default(false)
+  // Set only on a DM-shaped channel that's "with" a bot instead of a second
+  // user - see Bot.dmEnabled. No ChannelMember row for the bot itself.
+  botId                 String?
+  createdAt             DateTime    @default(now())
 
   members        ChannelMember[]
   messages       Message[]
@@ -98,6 +102,7 @@ model Channel {
   pickups        Pickup[]
   dockLogs       DockLog[]
   roleAccess     ChannelRoleAccess[]
+  bot            Bot?                @relation(fields: [botId], references: [id], onDelete: SetNull)
 
   @@map("channels")
 }
@@ -164,11 +169,15 @@ model Bot {
   ownerId     String?
   webhookUrl  String?
   permissions String[]
+  // Whether this bot can be opened as a DM and chatted with directly (no
+  // command prefix needed) - see Channel.botId.
+  dmEnabled   Boolean  @default(false)
   createdAt   DateTime @default(now())
 
-  owner    User?      @relation(fields: [ownerId], references: [id], onDelete: SetNull)
-  messages Message[]
-  events   BotEvent[]
+  owner      User?      @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  messages   Message[]
+  events     BotEvent[]
+  dmChannels Channel[]
 
   @@map("bots")
 }

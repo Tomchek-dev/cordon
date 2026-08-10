@@ -7,7 +7,15 @@ export class VoiceService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createToken(channelId: string, userId: string) {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    const [user, channel] = await Promise.all([
+      this.prisma.user.findUniqueOrThrow({ where: { id: userId } }),
+      this.prisma.channel.findUnique({ where: { id: channelId } }),
+    ]);
+
+    // Announcement channels are listen-only for everyone except ADMIN - this
+    // is the actual enforcement point; the frontend's hide-the-mic-button
+    // behavior is just presentation on top of it.
+    const canPublish = !channel?.isAnnouncementChannel || user.role === 'ADMIN';
 
     const token = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
       identity: user.id,
@@ -17,7 +25,7 @@ export class VoiceService {
     token.addGrant({
       room: channelId,
       roomJoin: true,
-      canPublish: true,
+      canPublish,
       canSubscribe: true,
     });
 

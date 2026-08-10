@@ -56,6 +56,7 @@ const ACTION_LABELS: Record<string, string> = {
   'role.deleted': 'deleted role',
   'role.assigned': 'assigned role',
   'role.unassigned': 'unassigned role',
+  'channel.announcement_mode': 'toggled announcement mode on',
 };
 
 function describeAuditEntry(entry: AuditLogEntry): string {

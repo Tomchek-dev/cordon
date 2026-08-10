@@ -15,6 +15,11 @@ export class BotsController {
     return this.botsService.findAllForOwner(req.user!.userId);
   }
 
+  @Get('dm-available')
+  findDmEnabled() {
+    return this.botsService.findDmEnabled();
+  }
+
   @Post()
   create(@Body() dto: CreateBotDto, @Req() req: Request) {
     return this.botsService.create(req.user!.userId, dto);

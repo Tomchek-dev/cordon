@@ -24,9 +24,13 @@ export const avatarUpload = {
   },
 };
 
+// Capped at 250MB rather than higher because the whole file is buffered in
+// memory (see the comment above) before it's written to disk - keep the
+// frontend's pre-flight check in page.tsx's handleAttachmentChange in sync
+// if this changes.
 export const attachmentUpload = {
   storage: memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: { fileSize: 250 * 1024 * 1024 },
 };
 
 export function avatarFilename(userId: string, originalname: string) {

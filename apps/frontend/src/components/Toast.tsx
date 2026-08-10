@@ -3,13 +3,14 @@ export interface ToastItem {
   channelId: string;
   title: string;
   preview: string;
-  kind: 'message' | 'mention' | 'reminder';
+  kind: 'message' | 'mention' | 'reminder' | 'call';
 }
 
 const KIND_ICON: Record<ToastItem['kind'], string> = {
   message: '💬',
   mention: '📣',
   reminder: '⏰',
+  call: '📞',
 };
 
 export function ToastStack({

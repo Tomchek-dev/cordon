@@ -13,6 +13,7 @@ const TITLES: Record<NotificationEvent['kind'], string> = {
   message: 'New message',
   mention: 'You were mentioned',
   reminder: '⏰ Reminder',
+  call: '🎙️ Voice call',
 };
 
 @Injectable()

@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Room, RoomEvent, type Participant } from 'livekit-client';
+import type { Socket } from 'socket.io-client';
+import { Room, RoomEvent, Track, type Participant, type RemoteTrack } from 'livekit-client';
 import { fetchVoiceToken } from '@/lib/api';
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'error';
@@ -30,13 +31,32 @@ function playChime() {
   }
 }
 
-export function VoiceCallBar({ channelId, label }: { channelId: string; label: string }) {
+export function VoiceCallBar({
+  channelId,
+  label,
+  socket,
+  isAdmin,
+  isAnnouncementChannel,
+}: {
+  channelId: string;
+  label: string;
+  socket: Socket | null;
+  isAdmin: boolean;
+  isAnnouncementChannel: boolean;
+}) {
+  // Announcement channels are listen-only for everyone except admins - this is
+  // just presentation; the server already refuses to grant canPublish to a
+  // non-admin's voice token for one of these channels (see VoiceService).
+  const listenOnly = isAnnouncementChannel && !isAdmin;
+  const openMic = isAnnouncementChannel && isAdmin;
   const [state, setState] = useState<ConnectionState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [talking, setTalking] = useState(false);
   const [speakingIdentities, setSpeakingIdentities] = useState<Set<string>>(new Set());
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [audioBlocked, setAudioBlocked] = useState(false);
   const roomRef = useRef<Room | null>(null);
+  const audioContainerRef = useRef<HTMLDivElement | null>(null);
   const selfIdentityRef = useRef<string | null>(null);
   // Mobile browsers (especially iOS Safari) can't reliably keep a mic track
   // alive once backgrounded, so PTT is foreground-only: we drop the room on
@@ -58,6 +78,8 @@ export function VoiceCallBar({ channelId, label }: { channelId: string; label: s
     setParticipants([]);
     setSpeakingIdentities(new Set());
     setTalking(false);
+    setAudioBlocked(false);
+    if (audioContainerRef.current) audioContainerRef.current.innerHTML = '';
   }, []);
 
   useEffect(() => {
@@ -90,10 +112,31 @@ export function VoiceCallBar({ channelId, label }: { channelId: string; label: s
         setState('idle');
         setParticipants([]);
       });
+      // Remote audio isn't played anywhere until we attach it to a DOM
+      // element ourselves - LiveKit only auto-*plays* tracks that are
+      // already attached, it doesn't attach them for you.
+      room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+        if (track.kind !== Track.Kind.Audio) return;
+        const el = track.attach();
+        el.autoplay = true;
+        audioContainerRef.current?.appendChild(el);
+      });
+      room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+        if (track.kind !== Track.Kind.Audio) return;
+        track.detach().forEach((el) => el.remove());
+      });
+      // Browsers can block autoplay even on an attached+playing element
+      // (common on mobile); surface a tap-to-resume prompt when that happens.
+      room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        setAudioBlocked(!room.canPlaybackAudio);
+      });
 
       await room.connect(wsUrl, token);
       // Publish the mic track muted; push-to-talk unmutes it only while held.
       await room.localParticipant.setMicrophoneEnabled(false);
+      // Lets other channel members know a call just started (only fires a
+      // notification server-side if we're the first participant).
+      socket?.emit('voiceJoined', { channelId });
 
       roomRef.current = room;
       setState('connected');
@@ -142,6 +185,8 @@ export function VoiceCallBar({ channelId, label }: { channelId: string; label: s
           setParticipants([]);
           setSpeakingIdentities(new Set());
           setTalking(false);
+          setAudioBlocked(false);
+          if (audioContainerRef.current) audioContainerRef.current.innerHTML = '';
         }
       } else if (stayConnectedRef.current && !roomRef.current) {
         join();
@@ -153,6 +198,15 @@ export function VoiceCallBar({ channelId, label }: { channelId: string; label: s
 
   return (
     <div className="border-b border-term-line bg-term-panel/60 px-4 py-3">
+      <div ref={audioContainerRef} className="hidden" />
+      {state === 'connected' && audioBlocked && (
+        <button
+          onClick={() => roomRef.current?.startAudio().then(() => setAudioBlocked(false))}
+          className="mb-2 rounded bg-term-red px-3 py-1.5 text-sm font-medium text-term-bg hover:opacity-90"
+        >
+          🔊 Tap to enable audio
+        </button>
+      )}
       {state === 'idle' && (
         <button
           onClick={join}
@@ -172,24 +226,39 @@ export function VoiceCallBar({ channelId, label }: { channelId: string; label: s
       )}
       {state === 'connected' && (
         <div className="flex flex-wrap items-center gap-4">
-          <button
-            onMouseDown={startTalking}
-            onMouseUp={stopTalking}
-            onMouseLeave={stopTalking}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              startTalking();
-            }}
-            onTouchEnd={(e) => {
-              e.preventDefault();
-              stopTalking();
-            }}
-            className={`select-none rounded px-4 py-2 text-sm font-medium transition-colors ${
-              talking ? 'bg-term-red text-term-bg hover:opacity-90' : 'bg-term-input text-term-green-bright hover:bg-term-line'
-            }`}
-          >
-            {talking ? '🔴 Talking…' : '🎤 Hold to talk'}
-          </button>
+          {listenOnly ? (
+            <span className="rounded bg-term-input px-4 py-2 text-sm font-medium text-term-muted">
+              🔈 Listening only
+            </span>
+          ) : openMic ? (
+            <button
+              onClick={talking ? stopTalking : startTalking}
+              className={`select-none rounded px-4 py-2 text-sm font-medium transition-colors ${
+                talking ? 'bg-term-red text-term-bg hover:opacity-90' : 'bg-term-input text-term-green-bright hover:bg-term-line'
+              }`}
+            >
+              {talking ? '🔴 Announcing… (tap to stop)' : '📢 Tap to announce'}
+            </button>
+          ) : (
+            <button
+              onMouseDown={startTalking}
+              onMouseUp={stopTalking}
+              onMouseLeave={stopTalking}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                startTalking();
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                stopTalking();
+              }}
+              className={`select-none rounded px-4 py-2 text-sm font-medium transition-colors ${
+                talking ? 'bg-term-red text-term-bg hover:opacity-90' : 'bg-term-input text-term-green-bright hover:bg-term-line'
+              }`}
+            >
+              {talking ? '🔴 Talking…' : '🎤 Hold to talk'}
+            </button>
+          )}
           <div className="flex flex-wrap gap-2">
             {participants.map((p) => (
               <span

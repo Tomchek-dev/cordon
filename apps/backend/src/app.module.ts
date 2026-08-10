@@ -24,6 +24,8 @@ import { PickupsModule } from './pickups/pickups.module';
 import { DockModule } from './dock/dock.module';
 import { GifsModule } from './gifs/gifs.module';
 import { RolesModule } from './roles/roles.module';
+import { AssistantModule } from './assistant/assistant.module';
+import { EbayModule } from './ebay/ebay.module';
 
 @Module({
   imports: [
@@ -49,6 +51,8 @@ import { RolesModule } from './roles/roles.module';
     DockModule,
     GifsModule,
     RolesModule,
+    AssistantModule,
+    EbayModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

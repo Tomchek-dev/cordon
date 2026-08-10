@@ -36,5 +36,5 @@ export interface NotificationEvent {
   userId: string;
   channelId: string;
   preview: string;
-  kind: 'message' | 'mention' | 'reminder';
+  kind: 'message' | 'mention' | 'reminder' | 'call';
 }

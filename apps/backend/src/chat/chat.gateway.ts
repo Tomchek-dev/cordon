@@ -11,6 +11,7 @@ import { ForbiddenException, Logger, OnModuleInit } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Server, Socket } from 'socket.io';
+import { RoomServiceClient } from 'livekit-server-sdk';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChannelsService, CHANNEL_CREATED_EVENT } from '../channels/channels.service';
 import type { ChannelCreatedEvent } from '../channels/channels.service';
@@ -48,6 +49,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   // Tracks how many live sockets a user has open, so presence only flips to
   // OFFLINE once their last connection actually drops (they may have multiple tabs).
   private readonly connectionsByUser = new Map<string, number>();
+  // Server-side calls hit LiveKit directly (LIVEKIT_HOST), same as the
+  // comment on that env var explains - this backend runs on the host, not
+  // inside the Docker network LiveKit itself is proxied through for clients.
+  private readonly roomService = new RoomServiceClient(
+    process.env.LIVEKIT_HOST!,
+    process.env.LIVEKIT_API_KEY,
+    process.env.LIVEKIT_API_SECRET,
+  );
 
   constructor(
     private readonly jwtService: JwtService,
@@ -304,6 +313,36 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   async handleMarkRead(@MessageBody() channelId: string, @ConnectedSocket() client: AuthedSocket) {
     await this.channelsService.markRead(channelId, client.data.userId);
     client.to(channelId).emit('read', { channelId, userId: client.data.userId, lastReadAt: new Date() });
+  }
+
+  // Fired by the client right after it successfully joins a LiveKit room (voice
+  // call). Token minting alone can't tell us this - the client hasn't actually
+  // joined the room yet at that point. Only notify other members when this is
+  // the FIRST participant, so a call already in progress doesn't re-notify
+  // everyone each time someone else joins.
+  @SubscribeMessage('voiceJoined')
+  async handleVoiceJoined(@MessageBody() data: { channelId: string }, @ConnectedSocket() client: AuthedSocket) {
+    await this.channelsService.ensureMembership(data.channelId, client.data.userId);
+
+    const participants = await this.roomService.listParticipants(data.channelId).catch(() => []);
+    if (participants.length > 1) return;
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: client.data.userId },
+      select: { displayName: true },
+    });
+    const recipients = await this.prisma.channelMember.findMany({
+      where: { channelId: data.channelId, userId: { not: client.data.userId }, muted: false },
+    });
+
+    for (const recipient of recipients) {
+      this.events.emit(NOTIFICATION_EVENT, {
+        userId: recipient.userId,
+        channelId: data.channelId,
+        preview: `🎙️ ${user?.displayName ?? 'Someone'} started a voice call`,
+        kind: 'call',
+      } satisfies NotificationEvent);
+    }
   }
 
   // Purely ephemeral - no DB write, just relayed to everyone else already in

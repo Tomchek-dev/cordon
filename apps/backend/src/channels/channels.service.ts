@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -80,7 +80,15 @@ export class ChannelsService {
           status: string;
           avatar: string | null;
         } | null = null;
-        if (membership.channel.type === 'DM') {
+        if (membership.channel.type === 'DM' && membership.channel.botId) {
+          // Bot DMs have no second ChannelMember row - synthesize the same
+          // shape from the Bot record instead.
+          const bot = await this.prisma.bot.findUnique({
+            where: { id: membership.channel.botId },
+            select: { id: true, name: true },
+          });
+          dmParticipant = bot ? { id: bot.id, username: bot.name, displayName: bot.name, status: 'ONLINE', avatar: null } : null;
+        } else if (membership.channel.type === 'DM') {
           const other = await this.prisma.channelMember.findFirst({
             where: { channelId: membership.channelId, userId: { not: userId } },
             include: { user: { select: { id: true, username: true, displayName: true, status: true, avatar: true } } },
@@ -118,6 +126,7 @@ export class ChannelsService {
     isPrivate = false,
     memberIds: string[] = [],
     roleIds: string[] = [],
+    isAnnouncementChannel = false,
   ) {
     const initialMemberIds = [...new Set([ownerId, ...memberIds])];
     const channel = await this.prisma.channel.create({
@@ -125,6 +134,7 @@ export class ChannelsService {
         name,
         type,
         isPrivate,
+        isAnnouncementChannel,
         members: {
           create: initialMemberIds.map((userId) => ({
             userId,
@@ -145,8 +155,26 @@ export class ChannelsService {
       type,
       isPrivate,
       roleIds,
+      isAnnouncementChannel,
     });
     return channel;
+  }
+
+  async setAnnouncementMode(channelId: string, enabled: boolean, actorId: string) {
+    const channel = await this.prisma.channel.findUnique({ where: { id: channelId } });
+    if (!channel) {
+      throw new NotFoundException('channel not found');
+    }
+    if (channel.type !== 'VOICE') {
+      throw new BadRequestException('announcement mode only applies to voice channels');
+    }
+    const updated = await this.prisma.channel.update({
+      where: { id: channelId },
+      data: { isAnnouncementChannel: enabled },
+      select: { id: true, isAnnouncementChannel: true },
+    });
+    await this.auditLog.log(actorId, 'channel.announcement_mode', 'Channel', channelId, { enabled });
+    return updated;
   }
 
   async addRole(channelId: string, requesterId: string, roleId: string) {
@@ -233,6 +261,38 @@ export class ChannelsService {
     this.events.emit(CHANNEL_CREATED_EVENT, {
       channelId: channel.id,
       memberIds: [userId, targetUserId],
+    } satisfies ChannelCreatedEvent);
+    return channel;
+  }
+
+  async createBotDm(userId: string, botId: string) {
+    const existing = await this.prisma.channel.findFirst({
+      where: { type: 'DM', botId, members: { some: { userId } } },
+    });
+    if (existing) return existing;
+
+    const bot = await this.prisma.bot.findUnique({ where: { id: botId } });
+    if (!bot) {
+      throw new NotFoundException('bot not found');
+    }
+    if (!bot.dmEnabled) {
+      throw new ForbiddenException('this bot cannot be DMed');
+    }
+
+    // No ChannelMember row for the bot itself - it has no account to log in
+    // with, it just reacts to MESSAGE_CREATED_EVENT like everywhere else.
+    const channel = await this.prisma.channel.create({
+      data: {
+        name: `bot-dm-${randomUUID()}`,
+        type: 'DM',
+        isPrivate: true,
+        botId,
+        members: { create: [{ userId }] },
+      },
+    });
+    this.events.emit(CHANNEL_CREATED_EVENT, {
+      channelId: channel.id,
+      memberIds: [userId],
     } satisfies ChannelCreatedEvent);
     return channel;
   }

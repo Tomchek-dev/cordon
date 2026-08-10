@@ -11,9 +11,11 @@ import {
   type Role,
   type User,
   type GifResult,
+  createBotDm,
   createChannel,
   createDm,
   fetchChannels,
+  fetchDmEnabledBots,
   fetchGifsEnabled,
   fetchMe,
   fetchMessages,
@@ -21,6 +23,7 @@ import {
   fetchReadReceipts,
   fetchRoles,
   fetchUsers,
+  setAnnouncementMode,
   setChannelMuted,
   setNotifyDmOnly,
   uploadAttachment,
@@ -46,6 +49,9 @@ import { SearchPanel } from '@/components/SearchPanel';
 import { VoiceCallBar } from '@/components/VoiceCallBar';
 import { ToastStack, type ToastItem } from '@/components/Toast';
 import { formatBytes } from '@/lib/format';
+
+// Keep in sync with attachmentUpload's limit in apps/backend/src/uploads/uploads.util.ts.
+const MAX_ATTACHMENT_SIZE = 250 * 1024 * 1024;
 
 const STATUS_OPTIONS: { value: 'ONLINE' | 'AWAY' | 'BUSY'; label: string }[] = [
   { value: 'ONLINE', label: 'Online' },
@@ -79,7 +85,9 @@ export default function Home() {
   const [newChannelPrivate, setNewChannelPrivate] = useState(false);
   const [newChannelMemberIds, setNewChannelMemberIds] = useState<string[]>([]);
   const [newChannelRoleIds, setNewChannelRoleIds] = useState<string[]>([]);
+  const [newChannelAnnouncement, setNewChannelAnnouncement] = useState(false);
   const [roles, setRoles] = useState<Role[]>([]);
+  const [dmBots, setDmBots] = useState<{ id: string; name: string }[]>([]);
   const [dmCallOpen, setDmCallOpen] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -272,7 +280,7 @@ export default function Home() {
 
     socket.on(
       'notification',
-      (payload: { channelId: string; preview: string; kind: 'message' | 'mention' | 'reminder' }) => {
+      (payload: { channelId: string; preview: string; kind: 'message' | 'mention' | 'reminder' | 'call' }) => {
         // Don't toast about the channel the user is already looking at.
         if (payload.channelId === activeChannelIdRef.current) return;
         const channel = channelsRef.current.find((c) => c.id === payload.channelId);
@@ -316,11 +324,18 @@ export default function Home() {
     }
     document.addEventListener('visibilitychange', handleVisibility);
 
-    Promise.all([fetchChannels(), fetchUsers(), fetchMe(), fetchRoles().catch(() => [])])
-      .then(([channelList, userList, me, roleList]) => {
+    Promise.all([
+      fetchChannels(),
+      fetchUsers(),
+      fetchMe(),
+      fetchRoles().catch(() => []),
+      fetchDmEnabledBots().catch(() => []),
+    ])
+      .then(([channelList, userList, me, roleList, dmBotList]) => {
         setChannels(channelList);
         setUsers(userList);
         setRoles(roleList);
+        setDmBots(dmBotList);
         // Merge rather than overwrite: a live 'presence' event may have already
         // arrived over the socket before this REST snapshot resolves, and it
         // should win over this potentially-stale DB read.
@@ -446,6 +461,7 @@ export default function Home() {
       newChannelPrivate,
       newChannelPrivate ? newChannelMemberIds : [],
       newChannelPrivate ? newChannelRoleIds : [],
+      newChannelType === 'VOICE' ? newChannelAnnouncement : false,
     );
     // Same as openDm: refetch for the enriched shape (unreadCount, dmParticipant) rather
     // than trusting the raw create response.
@@ -455,7 +471,22 @@ export default function Home() {
     setNewChannelPrivate(false);
     setNewChannelMemberIds([]);
     setNewChannelRoleIds([]);
+    setNewChannelAnnouncement(false);
     setActiveChannelId(channel.id);
+  }
+
+  async function handleToggleAnnouncementMode() {
+    if (!activeChannel) return;
+    const enabled = !activeChannel.isAnnouncementChannel;
+    setChannels((prev) => prev.map((c) => (c.id === activeChannel.id ? { ...c, isAnnouncementChannel: enabled } : c)));
+    try {
+      await setAnnouncementMode(activeChannel.id, enabled);
+    } catch (err) {
+      // Revert on failure.
+      setChannels((prev) => prev.map((c) => (c.id === activeChannel.id ? { ...c, isAnnouncementChannel: !enabled } : c)));
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to update announcement mode');
+      setTimeout(() => setErrorMessage(null), 4000);
+    }
   }
 
   function toggleNewChannelMember(userId: string) {
@@ -479,6 +510,18 @@ export default function Home() {
     const channel = await createDm(userId);
     // The raw createDm response doesn't include the enriched dmParticipant/unreadCount
     // fields (only findAllForUser computes those) - refetch for a consistent shape.
+    const refreshed = await fetchChannels();
+    setChannels(refreshed);
+    setActiveChannelId(channel.id);
+  }
+
+  async function openBotDm(botId: string) {
+    const existing = channels.find((c) => c.type === 'DM' && c.dmParticipant?.id === botId);
+    if (existing) {
+      setActiveChannelId(existing.id);
+      return;
+    }
+    const channel = await createBotDm(botId);
     const refreshed = await fetchChannels();
     setChannels(refreshed);
     setActiveChannelId(channel.id);
@@ -569,6 +612,11 @@ export default function Home() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file || !activeChannelId) return;
+    if (file.size > MAX_ATTACHMENT_SIZE) {
+      setErrorMessage(`File too large (max ${formatBytes(MAX_ATTACHMENT_SIZE)})`);
+      setTimeout(() => setErrorMessage(null), 4000);
+      return;
+    }
     setUploading(true);
     try {
       const attachment = await uploadAttachment(activeChannelId, file);
@@ -834,6 +882,16 @@ export default function Home() {
                     Voice
                   </label>
                 </div>
+                {newChannelType === 'VOICE' && (
+                  <label className="flex items-center gap-1 text-[11px] text-term-muted">
+                    <input
+                      type="checkbox"
+                      checked={newChannelAnnouncement}
+                      onChange={(e) => setNewChannelAnnouncement(e.target.checked)}
+                    />
+                    📢 Announcement channel (only admins get a mic)
+                  </label>
+                )}
                 <label className="flex items-center gap-1 text-[11px] text-term-muted">
                   <input
                     type="checkbox"
@@ -1088,7 +1146,20 @@ export default function Home() {
                 📌 Pinned{pinnedMessages.length > 0 ? ` (${pinnedMessages.length})` : ''}
               </button>
             )}
-            {activeChannel?.type === 'DM' && (
+            {activeChannel?.type === 'VOICE' && currentUser?.role === 'ADMIN' && (
+              <button
+                onClick={handleToggleAnnouncementMode}
+                title="Only admins get a mic; everyone else is listen-only"
+                className={`text-xs font-medium ${
+                  activeChannel.isAnnouncementChannel
+                    ? 'text-term-green-bright'
+                    : 'text-term-muted hover:text-term-green-bright'
+                }`}
+              >
+                📢 Announcement mode{activeChannel.isAnnouncementChannel ? ' (on)' : ''}
+              </button>
+            )}
+            {activeChannel?.type === 'DM' && !activeChannel.botId && (
               <button
                 onClick={() => setDmCallOpen((open) => !open)}
                 className={`rounded px-2 py-1 text-xs font-medium ${
@@ -1128,6 +1199,26 @@ export default function Home() {
                       {user.displayName}
                     </button>
                   ))}
+                  {dmBots.length > 0 && (
+                    <>
+                      <p className="mt-1 border-t border-term-line px-2 pt-1 text-[10px] uppercase tracking-wide text-term-muted">
+                        Bots
+                      </p>
+                      {dmBots.map((bot) => (
+                        <button
+                          key={bot.id}
+                          onClick={() => {
+                            openBotDm(bot.id);
+                            setMembersPanelOpen(false);
+                          }}
+                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-term-muted hover:bg-term-input/50"
+                        >
+                          <Avatar id={bot.id} displayName={bot.name} avatarUrl={null} size={20} />
+                          🤖 {bot.name}
+                        </button>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -1152,13 +1243,23 @@ export default function Home() {
         )}
 
         {activeChannel?.type === 'VOICE' && (
-          <VoiceCallBar key={activeChannel.id} channelId={activeChannel.id} label={activeChannel.name} />
+          <VoiceCallBar
+            key={activeChannel.id}
+            channelId={activeChannel.id}
+            label={activeChannel.name}
+            socket={socketRef.current}
+            isAdmin={currentUser?.role === 'ADMIN'}
+            isAnnouncementChannel={activeChannel.isAnnouncementChannel}
+          />
         )}
-        {activeChannel?.type === 'DM' && dmCallOpen && (
+        {activeChannel?.type === 'DM' && !activeChannel.botId && dmCallOpen && (
           <VoiceCallBar
             key={activeChannel.id}
             channelId={activeChannel.id}
             label={activeChannelLabel ?? 'Direct message'}
+            socket={socketRef.current}
+            isAdmin={false}
+            isAnnouncementChannel={false}
           />
         )}
 
@@ -1273,9 +1374,17 @@ export default function Home() {
                 ) : (
                   <>
                     {message.content && (
-                      <p className="ml-8 text-term-green-bright">
-                        <MessageContent content={message.content} />
-                      </p>
+                      <div
+                        className={`ml-8 mt-0.5 w-fit max-w-2xl rounded-lg border px-3 py-2 ${
+                          message.bot
+                            ? 'border-term-green-dim/50 bg-term-green-dim/10'
+                            : 'border-term-line bg-term-input/50'
+                        }`}
+                      >
+                        <p className="whitespace-pre-wrap break-words text-term-green-bright">
+                          <MessageContent content={message.content} />
+                        </p>
+                      </div>
                     )}
                     {message.attachmentUrl &&
                       (message.attachmentMimeType?.startsWith('image/') ? (
