@@ -113,6 +113,18 @@ CADDY_HTTPS_BIND=${CADDY_HTTPS_BIND}
 CADDY_HTTP_PORT=${CADDY_HTTP_PORT}
 CADDY_HTTPS_PORT=${CADDY_HTTPS_PORT}
 TRUST_PROXY_HOPS=${TRUST_PROXY_HOPS}
+
+# Optional integrations - uncomment and fill in anytime (no need to re-run
+# this script; just restart the stack: docker compose -f docker-compose.prod.yml up -d).
+# GIF picker (Tenor): https://developers.google.com/tenor/guides/quickstart
+# TENOR_API_KEY=
+# Claude-powered @mention assistant bot: platform.claude.com
+# ANTHROPIC_API_KEY=
+# eBay price-checker bot (!ebay command + DM chat): developer.ebay.com
+# EBAY_ENV=sandbox
+# EBAY_APP_ID=
+# EBAY_DEV_ID=
+# EBAY_CERT_ID=
 EOF
   chmod 600 .env
   echo "==> Wrote .env (permissions set to 600)"

@@ -54,6 +54,15 @@ services:
       # nginx (see setup.sh --behind-nginx). Wrong value here means every
       # client behind the proxy chain shares one rate-limit bucket.
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      # Optional integrations - each service gates on its own key being set
+      # and degrades gracefully (feature just stays hidden/inactive) when
+      # empty, so these are safe to leave blank.
+      TENOR_API_KEY: ${TENOR_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      EBAY_ENV: ${EBAY_ENV:-sandbox}
+      EBAY_APP_ID: ${EBAY_APP_ID:-}
+      EBAY_DEV_ID: ${EBAY_DEV_ID:-}
+      EBAY_CERT_ID: ${EBAY_CERT_ID:-}
     volumes:
       - backend_uploads:/app/uploads
 

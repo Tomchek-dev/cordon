@@ -61,9 +61,10 @@ Enums: `ChannelType`, `ChannelRole`, `UserStatus`, `UserRole`, `BotEventType`,
 | `dock` | Incoming/outgoing bin/pallet logging bot; `!in <qty> bins\|pallets`, `!out <qty> bins\|pallets [to <destination>]`; `GET /dock/metrics?period=` (ADMIN/MOD) |
 | `search` | Full-text-ish message search (`GET /search/messages`) |
 | `push` | Web Push (VAPID) subscribe/unsubscribe, public key endpoint |
-| `uploads` | Multer config (5MB avatars / 25MB attachments), AES-256-GCM encrypt/decrypt, serving |
+| `uploads` | Multer config (5MB avatars / 250MB attachments, memory-buffered before encryption), AES-256-GCM encrypt/decrypt, serving |
 | `audit-log` | Central audit trail (`GET /audit-log`, ADMIN); every privileged action (role changes, channel creation, dock/pickup activity, etc.) logs here |
 | `assistant` | Assistant Bot — replies when `@assistant` is mentioned in a channel message, using the last ~12 messages as context. No HTTP routes (event-listener only). Gated on `ANTHROPIC_API_KEY` being set (`AssistantService.isEnabled()`); boots and registers cleanly with no key, just stays silent — same "build it, gate it" posture as the GIF picker's `TENOR_API_KEY` gate. |
+| `ebay` | eBay Price Checker bot — `!ebay <query>` bang command anywhere, or DM the bot directly (no prefix needed) via `Channel.botId`/`Bot.dmEnabled`. OAuth client-credentials grant against eBay's Browse API, cached ~2h tokens. Gated on `EBAY_APP_ID`/`EBAY_CERT_ID`; `EBAY_ENV` picks sandbox (default, fake data) vs production. |
 | `notifications` | `NOTIFICATION_EVENT` fan-out — push notifications + in-app toasts, respects per-user/per-channel mute preferences |
 | `redis` / `prisma` | Infra wiring |
 
@@ -140,8 +141,10 @@ similarly gated.
 ### Explicitly deferred / not built
 - **Email notification bot** — deferred indefinitely, no email provider/credentials
   set up yet
-- **eBay price-checker bot** — deferred until a real eBay Developer API key is
-  obtained (developer.ebay.com)
+- **eBay sold-item/completed-listing prices** — eBay's only official source for this
+  (Marketplace Insights API) is a Limited Release API that's "restricted and not
+  open to new users at this time" per eBay's own docs; the active-listing
+  price-checker bot itself is built and working (see `ebay` module above)
 - **Native mobile apps** (React Native) — product-pivot scope, not started
 - **Multi-tenant "bring your own server" packaging** — product-pivot scope,
   not started
@@ -201,6 +204,12 @@ similarly gated.
   (`apps/backend/src/main.ts`) correctly unwinds two proxy hops
   (nginx → Caddy) instead of one — get this wrong and every client behind
   the proxy chain shares one rate-limit bucket again.
+- The optional bot integrations (`TENOR_API_KEY`, `ANTHROPIC_API_KEY`,
+  `EBAY_ENV`/`EBAY_APP_ID`/`EBAY_DEV_ID`/`EBAY_CERT_ID`) are passed through
+  `docker-compose.prod.yml`'s backend service with empty-string defaults, and
+  `setup.sh` writes commented-out placeholder lines for them into a freshly
+  generated `.env` — uncomment and fill in anytime, no need to re-run the
+  script, just restart the stack.
 
 ---
 
