@@ -3,6 +3,7 @@ import { JetBrains_Mono } from "next/font/google";
 import Script from "next/script";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
+import { FONT_SIZE_INIT_SCRIPT } from "@/lib/fontSize";
 import "./globals.css";
 
 const jetbrainsMono = JetBrains_Mono({
@@ -37,6 +38,9 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <Script id="theme-init" strategy="beforeInteractive">
           {THEME_INIT_SCRIPT}
+        </Script>
+        <Script id="font-size-init" strategy="beforeInteractive">
+          {FONT_SIZE_INIT_SCRIPT}
         </Script>
         <ServiceWorkerRegister />
         {children}

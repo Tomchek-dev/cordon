@@ -1,5 +1,15 @@
 export const MESSAGE_CREATED_EVENT = 'message.created';
 
+// Generic structured content a bot can attach to a reply - rendered as
+// cards in the UI instead of (or alongside) plain text. Not eBay-specific;
+// any bot can populate this.
+export interface MessageCard {
+  title: string;
+  subtitle?: string;
+  imageUrl?: string;
+  url?: string;
+}
+
 export interface MessageCreatedEvent {
   id: string;
   channelId: string;
@@ -12,6 +22,7 @@ export interface MessageCreatedEvent {
   attachmentMimeType?: string | null;
   attachmentSize?: number | null;
   replyToId?: string | null;
+  cards?: MessageCard[] | null;
 }
 
 // Shared include shape so every place a message gets created/fetched returns

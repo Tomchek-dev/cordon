@@ -47,6 +47,13 @@ export interface MessageReaction {
   userId: string;
 }
 
+export interface MessageCard {
+  title: string;
+  subtitle?: string;
+  imageUrl?: string;
+  url?: string;
+}
+
 export interface ChatMessage {
   id: string;
   channelId: string;
@@ -63,6 +70,7 @@ export interface ChatMessage {
   attachmentSize: number | null;
   pinnedAt: string | null;
   replyToId: string | null;
+  cards: MessageCard[] | null;
   reactions: MessageReaction[];
   replyTo: {
     id: string;

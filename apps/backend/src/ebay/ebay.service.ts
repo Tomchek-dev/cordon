@@ -3,10 +3,10 @@ import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { BangCommandsService, type BangCommandReply } from '../chat/bang-commands.service';
 import type { SlashCommandContext } from '../chat/slash-commands.service';
-import { MESSAGE_AUTHOR_INCLUDE, MESSAGE_CREATED_EVENT, type MessageCreatedEvent } from '../chat/events';
+import { MESSAGE_AUTHOR_INCLUDE, MESSAGE_CREATED_EVENT, type MessageCard, type MessageCreatedEvent } from '../chat/events';
 
 const EBAY_BOT_TOKEN_HASH = 'system:ebay-bot';
-const RESULT_LIMIT = 3;
+const RESULT_LIMIT = 5;
 // eBay's basic public scope - works with the client credentials grant, no
 // per-user consent needed. Renews with the access token every ~2 hours.
 const OAUTH_SCOPE = 'https://api.ebay.com/oauth/api_scope';
@@ -16,6 +16,7 @@ interface EbayItemSummary {
   price?: { value: string; currency: string };
   itemWebUrl: string;
   condition?: string;
+  image?: { imageUrl: string };
 }
 
 interface EbaySearchResponse {
@@ -89,7 +90,8 @@ export class EbayService implements OnModuleInit {
       return { content: `No eBay results for "${query}".`, botId: this.botId };
     }
 
-    return { content: this.formatResults(query, items), botId: this.botId };
+    const { summary, cards } = this.buildReply(query, items);
+    return { content: summary, cards, botId: this.botId };
   }
 
   // Lets someone DM this bot and just type a search - no "!ebay" prefix -
@@ -110,37 +112,58 @@ export class EbayService implements OnModuleInit {
     if (!query) return;
 
     let content: string;
+    let cards: MessageCard[] | undefined;
     try {
       const items = await this.search(query);
-      content = items.length === 0 ? `No eBay results for "${query}".` : this.formatResults(query, items);
+      if (items.length === 0) {
+        content = `No eBay results for "${query}".`;
+      } else {
+        ({ summary: content, cards } = this.buildReply(query, items));
+      }
     } catch (err) {
       this.logger.warn(`eBay DM search failed: ${(err as Error).message}`);
       content = "Couldn't reach eBay right now - try again in a moment.";
     }
 
     const reply = await this.prisma.message.create({
-      data: { channelId: message.channelId, botId: this.botId, content, replyToId: message.id },
+      data: {
+        channelId: message.channelId,
+        botId: this.botId,
+        content,
+        replyToId: message.id,
+        // Round-trip through JSON so optional (possibly-undefined) MessageCard
+        // fields become plain JSON Prisma's Json input accepts.
+        cards: cards ? JSON.parse(JSON.stringify(cards)) : undefined,
+      },
       include: MESSAGE_AUTHOR_INCLUDE,
     });
-    this.events.emit(MESSAGE_CREATED_EVENT, reply satisfies MessageCreatedEvent);
+    this.events.emit(MESSAGE_CREATED_EVENT, {
+      ...reply,
+      cards: reply.cards as MessageCreatedEvent['cards'],
+    } satisfies MessageCreatedEvent);
   }
 
-  // Plain text only (the chat UI doesn't render markdown) but laid out to
-  // scan easily: one blank line between listings, price/condition/link each
-  // on their own line instead of crammed into one.
-  private formatResults(query: string, items: EbayItemSummary[]): string {
-    const header = `🔎 eBay: "${query}"${this.isProduction() ? '' : '   🧪 sandbox test data, not real listings'}`;
-    const listings = items.map((item, index) => {
-      const title = item.title.length > 70 ? `${item.title.slice(0, 67)}…` : item.title;
-      const price = item.price
-        ? item.price.currency === 'USD'
-          ? `$${item.price.value}`
-          : `${item.price.value} ${item.price.currency}`
-        : 'Price unavailable';
-      const condition = item.condition ? `   ·   ${item.condition}` : '';
-      return `${index + 1}. ${title}\n   💵 ${price}${condition}\n   🔗 ${item.itemWebUrl}`;
-    });
-    return [header, ...listings].join('\n\n');
+  // A short text summary (the chat UI doesn't render markdown, and the
+  // per-listing detail now lives in `cards` instead) plus one card per
+  // listing for the frontend to render as an image/title/price row.
+  private buildReply(query: string, items: EbayItemSummary[]): { summary: string; cards: MessageCard[] } {
+    const summary = `🔎 eBay: "${query}"${this.isProduction() ? '' : '   🧪 sandbox test data, not real listings'} — ${items.length} result${items.length === 1 ? '' : 's'}`;
+    const cards = items.map((item) => ({
+      title: item.title,
+      subtitle: [
+        item.price
+          ? item.price.currency === 'USD'
+            ? `$${item.price.value}`
+            : `${item.price.value} ${item.price.currency}`
+          : 'Price unavailable',
+        item.condition,
+      ]
+        .filter(Boolean)
+        .join('  ·  '),
+      imageUrl: item.image?.imageUrl,
+      url: item.itemWebUrl,
+    }));
+    return { summary, cards };
   }
 
   private async search(query: string): Promise<EbayItemSummary[]> {

@@ -136,6 +136,10 @@ model Message {
   attachmentSize     Int?
   pinnedAt           DateTime?
   replyToId          String?
+  // Generic structured content for bot replies - an array of
+  // {title, subtitle?, imageUrl?, url?} rendered as cards in the UI. Not
+  // eBay-specific; any bot can populate it. See chat/events.ts MessageCard.
+  cards              Json?
 
   channel   Channel           @relation(fields: [channelId], references: [id], onDelete: Cascade)
   author    User?             @relation(fields: [authorId], references: [id], onDelete: SetNull)

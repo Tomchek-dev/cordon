@@ -34,8 +34,9 @@ import { decodeToken } from '@/lib/jwt';
 import { disconnectSocket, getSocket } from '@/lib/socket';
 import { sendDesktopNotification, setDesktopUnreadCount } from '@/lib/tauri';
 import { Avatar } from '@/components/Avatar';
-import { Plus, Smile, Film, LayoutGrid, Sun, Moon } from 'lucide-react';
+import { Plus, Smile, Film, LayoutGrid, Sun, Moon, ALargeSmall, Settings } from 'lucide-react';
 import { getTheme, setTheme, type Theme } from '@/lib/theme';
+import { getFontSize, setFontSize, nextFontSize, type FontSize } from '@/lib/fontSize';
 import { AdminDashboard } from '@/components/AdminDashboard';
 import { CalendarPanel } from '@/components/CalendarPanel';
 import { BotsPanel } from '@/components/BotsPanel';
@@ -44,6 +45,7 @@ import { CommandsLauncherPopover } from '@/components/CommandsLauncherPopover';
 import { GifPickerPopover } from '@/components/GifPickerPopover';
 import { ReportsPanel } from '@/components/ReportsPanel';
 import { MessageContent } from '@/components/MessageContent';
+import { MessageCards } from '@/components/MessageCards';
 import { PushNotificationToggle } from '@/components/PushNotificationToggle';
 import { SearchPanel } from '@/components/SearchPanel';
 import { VoiceCallBar } from '@/components/VoiceCallBar';
@@ -73,7 +75,9 @@ export default function Home() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(320);
   const [membersPanelOpen, setMembersPanelOpen] = useState(false);
+  const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
   const [theme, setThemeState] = useState<Theme>('dark');
+  const [fontSize, setFontSizeState] = useState<FontSize>('normal');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [draft, setDraft] = useState('');
@@ -137,12 +141,19 @@ export default function Home() {
       setSidebarWidth(saved);
     }
     setThemeState(getTheme());
+    setFontSizeState(getFontSize());
   }, []);
 
   function toggleTheme() {
     const next = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
     setThemeState(next);
+  }
+
+  function cycleFontSize() {
+    const next = nextFontSize(fontSize);
+    setFontSize(next);
+    setFontSizeState(next);
   }
 
   function startSidebarResize(e: React.MouseEvent) {
@@ -1019,48 +1030,6 @@ export default function Home() {
           )}
         </nav>
 
-        <button
-          onClick={() => setCalendarPanelOpen(true)}
-          className="border-t border-term-line p-2 text-left text-xs text-term-muted hover:text-term-green-bright"
-        >
-          Calendar
-        </button>
-        <button
-          onClick={() => setReportsPanelOpen(true)}
-          className="border-t border-term-line p-2 text-left text-xs text-term-muted hover:text-term-green-bright"
-        >
-          Reports
-        </button>
-        {canCreateChannels && (
-          <button
-            onClick={() => setAdminDashboardOpen(true)}
-            className="border-t border-term-line p-2 text-left text-xs text-term-muted hover:text-term-green-bright"
-          >
-            Admin
-          </button>
-        )}
-        <button
-          onClick={() => setBotsPanelOpen(true)}
-          className="border-t border-term-line p-2 text-left text-xs text-term-muted hover:text-term-green-bright"
-        >
-          Bots
-        </button>
-        <div className="border-t border-term-line">
-          <PushNotificationToggle />
-        </div>
-        <button
-          onClick={toggleTheme}
-          className="flex w-full items-center gap-1.5 border-t border-term-line p-2 text-left text-xs text-term-muted hover:text-term-green-bright"
-        >
-          {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
-          {theme === 'dark' ? 'Light mode' : 'Dark mode'}
-        </button>
-        <button
-          onClick={handleLogout}
-          className="border-t border-term-line p-2 text-left text-xs text-term-muted hover:text-term-green-bright"
-        >
-          Log out
-        </button>
       </aside>
 
       <div
@@ -1219,6 +1188,86 @@ export default function Home() {
                       ))}
                     </>
                   )}
+                </div>
+              )}
+            </div>
+            <div className="relative">
+              <button
+                onClick={() => setSettingsPanelOpen((open) => !open)}
+                title="Settings"
+                className={`rounded px-2 py-1 ${
+                  settingsPanelOpen ? 'text-term-green-bright' : 'text-term-muted hover:text-term-green-bright'
+                }`}
+              >
+                <Settings size={14} />
+              </button>
+              {settingsPanelOpen && (
+                <div className="absolute right-0 top-full z-10 mt-1 w-56 rounded border border-term-line bg-term-panel p-1 shadow-lg">
+                  <button
+                    onClick={() => {
+                      setCalendarPanelOpen(true);
+                      setSettingsPanelOpen(false);
+                    }}
+                    className="flex w-full items-center rounded px-2 py-1.5 text-left text-sm text-term-muted hover:bg-term-input/50"
+                  >
+                    Calendar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setReportsPanelOpen(true);
+                      setSettingsPanelOpen(false);
+                    }}
+                    className="flex w-full items-center rounded px-2 py-1.5 text-left text-sm text-term-muted hover:bg-term-input/50"
+                  >
+                    Reports
+                  </button>
+                  {canCreateChannels && (
+                    <button
+                      onClick={() => {
+                        setAdminDashboardOpen(true);
+                        setSettingsPanelOpen(false);
+                      }}
+                      className="flex w-full items-center rounded px-2 py-1.5 text-left text-sm text-term-muted hover:bg-term-input/50"
+                    >
+                      Admin
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setBotsPanelOpen(true);
+                      setSettingsPanelOpen(false);
+                    }}
+                    className="flex w-full items-center rounded px-2 py-1.5 text-left text-sm text-term-muted hover:bg-term-input/50"
+                  >
+                    Bots
+                  </button>
+                  <div className="mt-1 border-t border-term-line pt-1">
+                    <PushNotificationToggle />
+                  </div>
+                  <button
+                    onClick={toggleTheme}
+                    className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm text-term-muted hover:bg-term-input/50"
+                  >
+                    {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+                    {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+                  </button>
+                  <button
+                    onClick={cycleFontSize}
+                    title="Cycle text size"
+                    className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm text-term-muted hover:bg-term-input/50"
+                  >
+                    <ALargeSmall size={14} />
+                    Text size: {fontSize === 'normal' ? 'Normal' : fontSize === 'large' ? 'Large' : 'Extra large'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleLogout();
+                      setSettingsPanelOpen(false);
+                    }}
+                    className="mt-1 flex w-full items-center rounded border-t border-term-line px-2 pt-2.5 pb-1.5 text-left text-sm text-term-muted hover:bg-term-input/50"
+                  >
+                    Log out
+                  </button>
                 </div>
               )}
             </div>
@@ -1384,6 +1433,7 @@ export default function Home() {
                         <p className="whitespace-pre-wrap break-words text-term-green-bright">
                           <MessageContent content={message.content} />
                         </p>
+                        {message.cards && message.cards.length > 0 && <MessageCards cards={message.cards} />}
                       </div>
                     )}
                     {message.attachmentUrl &&

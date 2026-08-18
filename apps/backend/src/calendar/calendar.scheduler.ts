@@ -58,7 +58,10 @@ export class CalendarScheduler {
         },
         include: MESSAGE_AUTHOR_INCLUDE,
       });
-      this.events.emit(MESSAGE_CREATED_EVENT, message satisfies MessageCreatedEvent);
+      this.events.emit(MESSAGE_CREATED_EVENT, {
+        ...message,
+        cards: message.cards as MessageCreatedEvent['cards'],
+      } satisfies MessageCreatedEvent);
     } else {
       // A personal event is just a private ping to its creator - no channel
       // message, so it never leaks into a shared channel.

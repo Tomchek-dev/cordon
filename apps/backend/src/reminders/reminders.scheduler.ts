@@ -56,7 +56,10 @@ export class RemindersScheduler {
       include: MESSAGE_AUTHOR_INCLUDE,
     });
 
-    this.events.emit(MESSAGE_CREATED_EVENT, message satisfies MessageCreatedEvent);
+    this.events.emit(MESSAGE_CREATED_EVENT, {
+      ...message,
+      cards: message.cards as MessageCreatedEvent['cards'],
+    } satisfies MessageCreatedEvent);
     // A reminder is something the user explicitly asked for, so it bypasses
     // mute/DM-only preferences (those only govern other people's chatter).
     this.events.emit(NOTIFICATION_EVENT, {

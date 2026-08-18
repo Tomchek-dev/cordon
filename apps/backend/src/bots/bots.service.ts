@@ -99,7 +99,10 @@ export class BotsService {
       include: MESSAGE_AUTHOR_INCLUDE,
     });
 
-    this.events.emit(MESSAGE_CREATED_EVENT, message satisfies MessageCreatedEvent);
+    this.events.emit(MESSAGE_CREATED_EVENT, {
+      ...message,
+      cards: message.cards as MessageCreatedEvent['cards'],
+    } satisfies MessageCreatedEvent);
     return message;
   }
 }

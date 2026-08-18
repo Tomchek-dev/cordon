@@ -28,6 +28,15 @@
   --term-muted: #5c6f5f;
 }
 
+/* Scales every rem-based text size app-wide (Tailwind's text-xs/sm/base/etc.
+   are all rem). Independent of light/dark - applies the same in both. */
+html[data-font-size="large"] {
+  font-size: 112.5%;
+}
+html[data-font-size="xl"] {
+  font-size: 125%;
+}
+
 @theme inline {
   --color-term-bg: var(--term-bg);
   --color-term-panel: var(--term-panel);

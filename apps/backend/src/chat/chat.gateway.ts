@@ -232,12 +232,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
               attachmentName: reply.attachmentName,
               attachmentMimeType: reply.attachmentMimeType,
               attachmentSize: reply.attachmentSize,
+              // Round-trip through JSON so optional (possibly-undefined)
+              // MessageCard fields become plain JSON Prisma's Json input accepts.
+              cards: reply.cards ? JSON.parse(JSON.stringify(reply.cards)) : undefined,
             },
             include: MESSAGE_AUTHOR_INCLUDE,
           });
           // Unlike slash-command replies, these are operationally relevant to
           // the whole team, so they go through the normal notification fan-out.
-          this.events.emit(MESSAGE_CREATED_EVENT, systemMessage satisfies MessageCreatedEvent);
+          this.events.emit(MESSAGE_CREATED_EVENT, {
+            ...systemMessage,
+            cards: systemMessage.cards as MessageCreatedEvent['cards'],
+          } satisfies MessageCreatedEvent);
         }
         return;
       }
@@ -260,7 +266,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     // Broadcasting happens in handleMessageCreated below, triggered by this event -
     // the same path a bot posting over the REST API goes through, so there's exactly
     // one place that puts a message on the wire regardless of where it came from.
-    this.events.emit(MESSAGE_CREATED_EVENT, message satisfies MessageCreatedEvent);
+    this.events.emit(MESSAGE_CREATED_EVENT, {
+      ...message,
+      cards: message.cards as MessageCreatedEvent['cards'],
+    } satisfies MessageCreatedEvent);
   }
 
   // Fired for every newly created regular message (user-sent or bot-posted via REST).

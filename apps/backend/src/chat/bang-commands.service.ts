@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { SlashCommandContext } from './slash-commands.service';
+import type { MessageCard } from './events';
 
 export interface BangCommandReply {
   content: string;
@@ -8,6 +9,7 @@ export interface BangCommandReply {
   attachmentName?: string;
   attachmentMimeType?: string;
   attachmentSize?: number;
+  cards?: MessageCard[];
 }
 
 export type BangCommandResult = string | BangCommandReply | void;

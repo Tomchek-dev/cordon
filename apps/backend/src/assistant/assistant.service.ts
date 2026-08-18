@@ -81,7 +81,10 @@ export class AssistantService implements OnModuleInit {
       data: { channelId: trigger.channelId, botId: this.botId, content: replyText, replyToId: trigger.id },
       include: MESSAGE_AUTHOR_INCLUDE,
     });
-    this.events.emit(MESSAGE_CREATED_EVENT, message satisfies MessageCreatedEvent);
+    this.events.emit(MESSAGE_CREATED_EVENT, {
+      ...message,
+      cards: message.cards as MessageCreatedEvent['cards'],
+    } satisfies MessageCreatedEvent);
   }
 
   private async tryRespond(transcript: string): Promise<string | null> {

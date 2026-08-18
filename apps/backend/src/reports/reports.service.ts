@@ -122,7 +122,10 @@ export class ReportsService implements OnModuleInit {
       data: { channelId: this.reportChannelId, botId: this.botId, content },
       include: MESSAGE_AUTHOR_INCLUDE,
     });
-    this.events.emit(MESSAGE_CREATED_EVENT, message satisfies MessageCreatedEvent);
+    this.events.emit(MESSAGE_CREATED_EVENT, {
+      ...message,
+      cards: message.cards as MessageCreatedEvent['cards'],
+    } satisfies MessageCreatedEvent);
 
     return this.prisma.dailyReport.create({
       data: { date: startOfDay, channelId: this.reportChannelId, content },
